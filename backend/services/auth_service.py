@@ -15,13 +15,15 @@ GUEST_FIREBASE_UID = "guest_uid_demo_101"
 def verify_firebase_token(authorization: Optional[str] = Header(None), db: Session = Depends(get_db)) -> Dict[str, Any]:
     """
     FastAPI dependency verifying Firebase ID Token from Authorization Header (Bearer <token>).
-    If no token is provided or Firebase is unconfigured, seamlessly falls back to Guest Mode.
+    If no token is provided, falls back to Guest Mode.
+    If a token IS provided, always attempt to decode and serve the real user —
+    even if FIREBASE_PROJECT_ID is not configured (signature verification is skipped in that case).
     """
     firebase_project_id = os.getenv("FIREBASE_PROJECT_ID", "").strip()
 
-    # 1. Guest Mode Fallback
-    if not authorization or not firebase_project_id:
-        logger.debug("Operating in Guest / Demo Mode.")
+    # 1. Guest Mode Fallback — ONLY when no Authorization header is provided at all
+    if not authorization:
+        logger.debug("No Authorization header — operating in Guest / Demo Mode.")
         # Ensure Guest User exists in Database
         guest_user = db.query(User).filter(User.firebase_uid == GUEST_FIREBASE_UID).first()
         if not guest_user:

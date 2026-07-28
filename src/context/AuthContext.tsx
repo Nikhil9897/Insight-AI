@@ -97,7 +97,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUserProfile(data.user || null);
         setProjects(data.projects || []);
         setActiveProjectId(data.user?.lastOpenedProjectId || data.projects?.[0]?.id || null);
-        setIsGuestMode(data.isGuest || false);
+        // If a real Firebase user is logged in, NEVER mark them as guest — even if backend returned isGuest:true
+        // (backend may fall back to guest when FIREBASE_PROJECT_ID is missing from env)
+        const effectiveIsGuest = firebaseUser ? false : (data.isGuest || false);
+        setIsGuestMode(effectiveIsGuest);
       }
     } catch (err: any) {
       console.warn('Workspace sync note (backend may be cold-starting):', err?.message || err);

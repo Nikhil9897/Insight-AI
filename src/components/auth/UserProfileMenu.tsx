@@ -22,12 +22,14 @@ export const UserProfileMenu: React.FC<UserProfileMenuProps> = ({
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
   const [isSavingBeforeLogout, setIsSavingBeforeLogout] = useState(false);
 
-  const rawName = userProfile?.displayName || user?.displayName;
-  const email = userProfile?.email || user?.email || (isGuestMode ? 'guest@insightai.demo' : '');
-  const displayName = rawName && rawName !== 'Authenticated User' && rawName !== 'User Account'
+  // Prefer Firebase user's real data first — backend profile may contain stale/guest data
+  const rawName = user?.displayName || userProfile?.displayName;
+  const email = user?.email || userProfile?.email || (isGuestMode ? 'guest@insightai.demo' : '');
+  const isGuestProfile = rawName === 'Guest Analyst (Demo)' || email === 'guest@insightai.demo';
+  const displayName = (rawName && !isGuestProfile && rawName !== 'Authenticated User' && rawName !== 'User Account')
     ? rawName
-    : (email ? email.split('@')[0] : (isGuestMode ? 'Demo / Guest User' : 'Authenticated User'));
-  const avatarUrl = userProfile?.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${displayName}`;
+    : (email && !isGuestProfile ? email.split('@')[0] : (isGuestMode ? 'Demo / Guest User' : 'Authenticated User'));
+  const avatarUrl = user?.photoURL || userProfile?.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(displayName)}`;
 
   return (
     <>
@@ -44,7 +46,7 @@ export const UserProfileMenu: React.FC<UserProfileMenuProps> = ({
           <div className="text-left hidden sm:block">
             <div className="text-xs font-bold text-slate-900 leading-none">{displayName}</div>
             <div className="text-[10px] font-semibold leading-none mt-1 text-slate-400">
-              {isGuestMode ? 'Demo / Guest Session' : 'Supabase Authenticated'}
+              {isGuestMode ? 'Demo / Guest Session' : 'Authenticated'}
             </div>
           </div>
           <ChevronDown className={`h-3.5 w-3.5 text-slate-400 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} />
@@ -57,7 +59,7 @@ export const UserProfileMenu: React.FC<UserProfileMenuProps> = ({
               <div className="text-[11px] text-slate-500 font-medium truncate">{email}</div>
               <div className="pt-1">
                 <Badge variant={isGuestMode ? 'amber' : 'emerald'}>
-                  {isGuestMode ? 'Guest Mode (SQLite)' : 'Supabase Authenticated'}
+                  {isGuestMode ? 'Guest Mode' : 'Firebase Authenticated'}
                 </Badge>
               </div>
             </div>

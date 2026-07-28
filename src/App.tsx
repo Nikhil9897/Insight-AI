@@ -669,13 +669,13 @@ function WorkspaceInner() {
         <div className="p-3 border-t border-[#e5e5e5] bg-slate-50/50">
           <div className={`flex items-center gap-3 px-2 py-2 ${isSidebarCollapsed ? 'justify-center px-0' : ''}`}>
             <div className="relative shrink-0">
-              {/* Use userProfile avatar first, then Firebase photoURL, then DiceBear with real name */}
+              {/* Prefer Firebase photoURL first, then backend avatarUrl, then DiceBear initials */}
               <img
                 src={
-                  userProfile?.avatarUrl ||
                   user?.photoURL ||
+                  (userProfile?.avatarUrl && !userProfile.avatarUrl.includes('GuestAnalyst') ? userProfile.avatarUrl : null) ||
                   `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(
-                    userProfile?.displayName || user?.displayName || user?.email?.split('@')[0] || 'Guest'
+                    user?.displayName || user?.email?.split('@')[0] || 'User'
                   )}`
                 }
                 alt="Avatar"
@@ -696,10 +696,17 @@ function WorkspaceInner() {
                 </div>
                 <p className="text-xs font-bold text-slate-900 truncate leading-tight">
                   {(() => {
-                    const name = userProfile?.displayName || user?.displayName || user?.email?.split('@')[0];
-                    if (name && name !== 'Authenticated User' && name !== 'User Account' && name !== 'User') return name;
-                    if (userProfile?.email) return userProfile.email.split('@')[0];
-                    if (user?.email) return user.email.split('@')[0];
+                    // Always prefer the real Firebase user identity over backend profile
+                    const firebaseName = user?.displayName;
+                    const firebaseEmail = user?.email;
+                    const backendName = userProfile?.displayName;
+                    const isGuestName = (n: string | null | undefined) =>
+                      !n || n === 'Guest Analyst (Demo)' || n === 'Authenticated User' || n === 'User Account' || n === 'User';
+
+                    if (firebaseName && !isGuestName(firebaseName)) return firebaseName;
+                    if (firebaseEmail) return firebaseEmail.split('@')[0];
+                    if (backendName && !isGuestName(backendName)) return backendName;
+                    if (userProfile?.email && userProfile.email !== 'guest@insightai.demo') return userProfile.email.split('@')[0];
                     return isGuestMode ? 'Demo / Guest User' : 'Authenticated User';
                   })()}
                 </p>
