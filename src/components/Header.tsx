@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Database, FileSpreadsheet, ChevronDown, Check, Upload, Trash2 } from 'lucide-react';
+import { Database, FileSpreadsheet, ChevronDown, Check, Upload, Trash2, Save, CheckCircle2 } from 'lucide-react';
 import { Dataset } from '../types';
 import { Button } from './ui/Button';
 import { InsightLogo } from './ui/InsightLogo';
@@ -18,6 +18,8 @@ interface HeaderProps {
   onOpenProjectSwitcher?: () => void;
   onOpenAuthModal?: () => void;
   onSaveProgress?: () => Promise<void>;
+  isSaving?: boolean;
+  lastSavedAt?: Date | null;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -30,6 +32,8 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenProjectSwitcher,
   onOpenAuthModal,
   onSaveProgress,
+  isSaving = false,
+  lastSavedAt,
 }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
@@ -127,6 +131,20 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Right: Actions */}
       <div className="flex items-center gap-2">
+        {onSaveProgress && (
+          <Button
+            variant="secondary"
+            size="sm"
+            leftIcon={<Save className={`h-3.5 w-3.5 ${isSaving ? 'animate-spin text-blue-600' : 'text-slate-600'}`} />}
+            onClick={onSaveProgress}
+            disabled={isSaving}
+            title={lastSavedAt ? `Last saved at ${lastSavedAt.toLocaleTimeString()}` : 'Save workspace progress'}
+            className="hidden sm:flex"
+          >
+            {isSaving ? 'Saving...' : 'Save Progress'}
+          </Button>
+        )}
+
         <Button
           variant="primary"
           size="sm"

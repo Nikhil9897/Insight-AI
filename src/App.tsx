@@ -44,31 +44,112 @@ function WorkspaceInner() {
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
+  const [saveToast, setSaveToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [datasetSearch, setDatasetSearch] = useState('');
+
+  // Handle Save Progress (for both Guest localStorage and Real User Cloud)
+  const handleSaveProgress = async () => {
+    setIsSaving(true);
+    setSaveToast(null);
+    try {
+      if (isGuestMode || !user) {
+        // Save Guest Progress to local browser storage
+        const snapshot = {
+          savedAt: new Date().toISOString(),
+          datasets: (datasets || []).map((d) => ({
+            id: d.id,
+            name: d.name,
+            description: d.description,
+            summary: d.summary,
+            data: (d.data || []).slice(0, 2000),
+            uploadedAt: d.uploadedAt,
+            isSample: d.isSample,
+          })),
+          pinnedCards: pinnedItems || [],
+          history: history || [],
+        };
+        localStorage.setItem('insightai_workspace_guest', JSON.stringify(snapshot));
+        const now = new Date();
+        setLastSavedAt(now);
+        setSaveToast({
+          message: 'Guest session progress saved to browser storage',
+          type: 'success',
+        });
+      } else if (activeProjectId) {
+        // Save Authenticated Real User Progress to Cloud DB
+        const token = await getIdToken();
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        const res = await fetch(`/api/workspace/projects/${activeProjectId}/save-snapshot`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            datasets: (datasets || []).map((d) => ({
+              id: d.id,
+              name: d.name,
+              description: d.description,
+              summary: d.summary,
+              data: d.data || [],
+              isSample: d.isSample,
+            })),
+            pinnedCards: pinnedItems || [],
+            queryHistory: history || [],
+          }),
+        });
+
+        if (res.ok) {
+          const now = new Date();
+          setLastSavedAt(now);
+          setSaveToast({
+            message: 'Workspace progress saved to cloud',
+            type: 'success',
+          });
+        } else {
+          throw new Error('Failed to save cloud snapshot');
+        }
+      }
+    } catch (err: any) {
+      console.warn('Save progress note:', err);
+      setSaveToast({
+        message: 'Could not save progress. Please try again.',
+        type: 'error',
+      });
+    } finally {
+      setIsSaving(false);
+      setTimeout(() => setSaveToast(null), 4000);
+    }
+  };
 
   // Synchronize landing page & guest mode state cleanly
   useEffect(() => {
     if (isLoading) return;
 
-    if (user) {
+    if (user && !isGuestMode) {
       // Authenticated user — clear to empty workspace; project restore effect will populate real saved datasets
       setShowLanding(false);
       setAuthModalMode(null);
-      setDatasets([]);
-      setActiveDatasetId('');
-    } else if (isGuestMode || !showLanding) {
-      // Guest mode — try to restore last guest session from localStorage, else load sample datasets
+    } else if (isGuestMode || !user) {
+      // Guest mode — load guest snapshot from localStorage if exists, else load pristine sampleDatasets
       const snap = loadGuestWorkspaceSnapshot();
       if (snap && snap.datasets && snap.datasets.length > 0) {
-        const restored = snap.datasets.map((d: any) => ({
-          ...d,
-          data: d.data || [],
-          summary: d.summary || { rowCount: 0, columnCount: 0, columns: [], missingCellsCount: 0, duplicateRowsCount: 0 },
-        })) as Dataset[];
-        setDatasets(restored);
-        setActiveDatasetId(restored[0]?.id || '');
+        const restored = snap.datasets
+          .filter((d: any) => d.name !== 'InsightAI Advanced Test Dataset' && !d.name?.toLowerCase().includes('advanced test'))
+          .map((d: any) => ({
+            ...d,
+            data: d.data || [],
+            summary: d.summary || { rowCount: 0, columnCount: 0, columns: [], missingCellsCount: 0, duplicateRowsCount: 0 },
+          })) as Dataset[];
+
+        if (restored.length > 0) {
+          setDatasets(restored);
+          setActiveDatasetId(restored[0]?.id || '');
+        } else {
+          setDatasets(sampleDatasets);
+          setActiveDatasetId(sampleDatasets[0]?.id || '');
+        }
       } else {
         setDatasets(sampleDatasets);
         setActiveDatasetId(sampleDatasets[0]?.id || '');
@@ -81,14 +162,14 @@ function WorkspaceInner() {
       setActiveDatasetId('');
       setPinnedItems([]);
     }
-  }, [user, isGuestMode, isLoading, showLanding]);
+  }, [user, isGuestMode, isLoading]);
 
   // Activate debounced auto-save hook
   useAutoSaveWorkspace(pinnedItems, datasets);
 
-  // Restore workspace when project changes
+  // Restore workspace when project changes (STRICTLY AUTHENTICATED REAL USERS ONLY)
   useEffect(() => {
-    if (!activeProjectId) return;
+    if (!activeProjectId || !user || isGuestMode) return;
     const fetchRestored = async () => {
       try {
         const token = await getIdToken();
@@ -159,7 +240,7 @@ function WorkspaceInner() {
       }
     };
     fetchRestored();
-  }, [activeProjectId]);
+  }, [activeProjectId, user, isGuestMode]);
 
   const safeDatasets = Array.isArray(datasets) ? datasets : [];
   const safePinnedItems = Array.isArray(pinnedItems) ? pinnedItems : [];
@@ -417,75 +498,7 @@ function WorkspaceInner() {
     setPinnedItems((prev) => prev.filter((item) => item.id !== id));
   };
 
-  /**
-   * handleSaveProgress — full workspace snapshot save.
-   * Saves complete dataset rows (up to 5000/dataset), pinned dashboard cards,
-   * and query history to backend (or localStorage for guests).
-   */
-  const handleSaveProgress = useCallback(async () => {
-    setIsSaving(true);
-    try {
-      // Guest / no-project: save to localStorage
-      if (isGuestMode || !activeProjectId) {
-        const snapshot = {
-          savedAt: new Date().toISOString(),
-          datasets: datasets.map((d) => ({
-            id: d.id,
-            name: d.name,
-            description: d.description,
-            summary: d.summary,
-            data: (d.data || []).slice(0, 2000),
-            uploadedAt: d.uploadedAt,
-            isSample: d.isSample,
-          })),
-          pinnedCards: pinnedItems,
-        };
-        localStorage.setItem('insightai_workspace_guest', JSON.stringify(snapshot));
-        setLastSavedAt(new Date());
-        return;
-      }
 
-      // Authenticated: save full snapshot to backend
-      const token = await getIdToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch(`/api/workspace/projects/${activeProjectId}/save-snapshot`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          datasets: datasets.map((d) => ({
-            id: d.id,
-            name: d.name,
-            description: d.description || '',
-            summary: d.summary,
-            data: d.data || [],
-            isSample: d.isSample || false,
-          })),
-          pinnedCards: pinnedItems,
-          queryHistory: history.slice(0, 100).map((h) => ({
-            id: h.id,
-            datasetId: h.datasetId,
-            datasetName: h.datasetName,
-            userQuery: h.userQuery,
-            sql: h.sql,
-            explanation: h.explanation || '',
-            executionTimeMs: h.executionTimeMs,
-            resultRowCount: h.resultRowCount,
-            status: h.status,
-          })),
-        }),
-      });
-
-      if (res.ok) {
-        setLastSavedAt(new Date());
-      }
-    } catch (err) {
-      console.warn('Save progress error:', err);
-    } finally {
-      setIsSaving(false);
-    }
-  }, [datasets, pinnedItems, history, activeProjectId, isGuestMode, getIdToken]);
 
   const isCurrentChartPinned = activeQueryResult && activePinnedItems.some(
     (item) => item.query === activeQueryResult.query && item.sql === activeQueryResult.sql
@@ -720,7 +733,17 @@ function WorkspaceInner() {
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 flex flex-col min-w-0 bg-[#F6F6F4]">
+      <main className="flex-1 flex flex-col min-w-0 bg-[#F6F6F4] relative">
+        {/* Toast Notification for Save Progress */}
+        {saveToast && (
+          <div className={`fixed top-16 right-6 z-50 flex items-center gap-2.5 px-4 py-3 rounded-xl shadow-soft-lg border text-xs font-semibold animate-in fade-in slide-in-from-top-2 duration-200 ${
+            saveToast.type === 'success' ? 'bg-slate-900 text-slate-50 border-slate-700' : 'bg-rose-900 text-rose-50 border-rose-700'
+          }`}>
+            <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+            <span>{saveToast.message}</span>
+          </div>
+        )}
+
         <Header
           activeTab={activeTab}
           setActiveTab={setActiveTab}
@@ -734,6 +757,8 @@ function WorkspaceInner() {
           onOpenProjectSwitcher={() => setProjectSwitcherOpen(true)}
           onOpenAuthModal={() => setAuthModalMode('login')}
           onSaveProgress={handleSaveProgress}
+          isSaving={isSaving}
+          lastSavedAt={lastSavedAt}
         />
 
         <div className="px-8 py-8 max-w-6xl mx-auto w-full space-y-8 flex-1">
