@@ -27,17 +27,16 @@ The platform utilizes a **Hybrid Multi-Agent LLM Architecture** for maximum reli
 
 ## 📸 Screenshots
 
-### 📊 Dashboard Overview
-![Dashboard Overview](screenshots/dashboard.png)
+### 📊 Landing Page
+![Landing Page](screenshots/landing_page.png)
 
-### 🔌 Data Connections & Workspaces
-![Data Connections](screenshots/data_sources.png)
+(screenshots/dashboard.png)
 
-### 💬 NL2SQL Query Interface
-![Query Interface](screenshots/query_interface.png)
+### 💬 Sign In Page
+![Sign In Page](screenshots/sign_in_page.png)
 
-### 📈 Analytics & Visualizations
-![Analytics](screenshots/analytics_charts.png)
+### 📈 Dashboard
+![Dashboard](screenshots/dashboard.png)
 
 ---
 
