@@ -28,7 +28,10 @@ if SUPABASE_URL:
     engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_size=10, max_overflow=20)
 else:
     # Guest / Demo Mode SQLite database
-    SQLITE_PATH = os.path.join(os.path.dirname(__file__), "insightai_persistence.db")
+    if os.environ.get("VERCEL"):
+        SQLITE_PATH = "/tmp/insightai_persistence.db"
+    else:
+        SQLITE_PATH = os.path.join(os.path.dirname(__file__), "insightai_persistence.db")
     DATABASE_URL = f"sqlite:///{SQLITE_PATH}"
     logger.info("No Supabase URL found. Initializing Guest Mode SQLite Persistence at '%s'.", SQLITE_PATH)
     engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
