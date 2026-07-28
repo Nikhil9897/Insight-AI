@@ -128,9 +128,12 @@ function WorkspaceInner() {
     if (isLoading) return;
 
     if (user && !isGuestMode) {
-      // Authenticated user — clear to empty workspace; project restore effect will populate real saved datasets
+      // Authenticated user — clear workspace to empty; project restore effect will populate real saved datasets
       setShowLanding(false);
       setAuthModalMode(null);
+      setDatasets([]);
+      setActiveDatasetId('');
+      setPinnedItems([]);
     } else if (isGuestMode || !user) {
       // Guest mode — load guest snapshot from localStorage if exists, else load pristine sampleDatasets
       const snap = loadGuestWorkspaceSnapshot();
@@ -180,10 +183,10 @@ function WorkspaceInner() {
         if (res.ok) {
           const data = await res.json();
 
-          // Reconstruct full Dataset objects (including data rows)
+          // Reconstruct full Dataset objects (including data rows, filtering out any sample datasets for real users)
           if (data.datasets && data.datasets.length > 0) {
             const restoredDatasets: Dataset[] = data.datasets
-              .filter((d: any) => d.data && d.data.length > 0)  // only restore if rows exist
+              .filter((d: any) => d.data && d.data.length > 0 && !d.isSample && d.sourceType !== 'sample')  // filter out sample datasets for real user!
               .map((d: any) => ({
                 id: d.id,
                 name: d.name,
@@ -197,7 +200,7 @@ function WorkspaceInner() {
                   duplicateRowsCount: 0,
                 },
                 uploadedAt: d.uploadedAt || new Date().toISOString(),
-                isSample: d.isSample || false,
+                isSample: false,
               } as Dataset));
 
             if (restoredDatasets.length > 0) {
