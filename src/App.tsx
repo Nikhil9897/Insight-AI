@@ -308,10 +308,26 @@ function WorkspaceInner() {
         }),
       });
 
-      const responseData = await res.json();
+      // Safely parse response — backend may return plain-text errors on 5xx
+      let responseData: any = null;
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        try {
+          responseData = await res.json();
+        } catch {
+          const rawText = await res.text().catch(() => '');
+          throw new Error(`Server returned malformed JSON. Raw: ${rawText.slice(0, 200)}`);
+        }
+      } else {
+        const rawText = await res.text().catch(() => '');
+        if (!res.ok) {
+          throw new Error(rawText.slice(0, 300) || `Server error: HTTP ${res.status}`);
+        }
+        throw new Error(`Unexpected response format from server. Raw: ${rawText.slice(0, 200)}`);
+      }
 
       if (!res.ok) {
-        throw new Error(responseData.details || responseData.error || responseData.detail || 'Failed to execute query.');
+        throw new Error(responseData?.detail || responseData?.details || responseData?.error || `Server error: HTTP ${res.status}`);
       }
 
       const result: QueryResult = responseData;

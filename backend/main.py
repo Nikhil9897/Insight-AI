@@ -1,9 +1,9 @@
 import os
 import logging
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
 from backend.routes.analytics import router as analytics_router
 from backend.routes.auth import router as auth_router
 from backend.routes.connectors import router as connectors_router
@@ -52,6 +52,16 @@ app.include_router(auth_router)
 app.include_router(connectors_router)
 app.include_router(workspace_router)
 app.include_router(chat_router)
+
+
+# Global exception handler — guarantees all unhandled errors return JSON
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Unhandled exception on {request.url}: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": str(exc), "error": "Internal server error", "path": str(request.url.path)},
+    )
 
 
 @app.get("/api/health")
