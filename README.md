@@ -30,8 +30,6 @@ The platform utilizes a **Hybrid Multi-Agent LLM Architecture** for maximum reli
 ### 📊 Landing Page
 ![Landing Page](screenshots/landing_page.png)
 
-(screenshots/dashboard.png)
-
 ### 💬 Sign In Page
 ![Sign In Page](screenshots/sign_in_page.png)
 
