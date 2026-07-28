@@ -1,6 +1,5 @@
 import express from 'express';
 import path from 'path';
-import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI, Type } from '@google/genai';
 import alasql from 'alasql';
 import dotenv from 'dotenv';
@@ -1107,6 +1106,7 @@ Using ONLY these pre-computed factual statistics, provide a JSON response matchi
 // Start Express server & Vite integration
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
