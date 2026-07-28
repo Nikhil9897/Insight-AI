@@ -79,6 +79,8 @@ npm install
 
 # (Optional) The backend Python virtual environment will be created automatically 
 # upon the first run, or you can set it up manually.
+# If setting up manually, install dependencies using:
+# pip install -r backend/requirements-dev.txt
 ```
 
 ### 2. Environment Variables
