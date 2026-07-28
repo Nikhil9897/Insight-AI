@@ -653,8 +653,15 @@ function WorkspaceInner() {
         <div className="p-3 border-t border-[#e5e5e5] bg-slate-50/50">
           <div className={`flex items-center gap-3 px-2 py-2 ${isSidebarCollapsed ? 'justify-center px-0' : ''}`}>
             <div className="relative shrink-0">
+              {/* Use userProfile avatar first, then Firebase photoURL, then DiceBear with real name */}
               <img
-                src={userProfile?.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${userProfile?.displayName || 'Guest'}`}
+                src={
+                  userProfile?.avatarUrl ||
+                  user?.photoURL ||
+                  `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(
+                    userProfile?.displayName || user?.displayName || user?.email?.split('@')[0] || 'Guest'
+                  )}`
+                }
                 alt="Avatar"
                 className="w-8 h-8 rounded-full border border-[#e5e5e5] object-cover shadow-sm"
               />
@@ -672,9 +679,13 @@ function WorkspaceInner() {
                   </p>
                 </div>
                 <p className="text-xs font-bold text-slate-900 truncate leading-tight">
-                  {userProfile?.displayName && userProfile.displayName !== 'Authenticated User' && userProfile.displayName !== 'User Account'
-                    ? userProfile.displayName
-                    : (userProfile?.email ? userProfile.email.split('@')[0] : (isGuestMode ? 'Demo / Guest User' : 'Authenticated User'))}
+                  {(() => {
+                    const name = userProfile?.displayName || user?.displayName || user?.email?.split('@')[0];
+                    if (name && name !== 'Authenticated User' && name !== 'User Account' && name !== 'User') return name;
+                    if (userProfile?.email) return userProfile.email.split('@')[0];
+                    if (user?.email) return user.email.split('@')[0];
+                    return isGuestMode ? 'Demo / Guest User' : 'Authenticated User';
+                  })()}
                 </p>
                 <p className="text-[10px] text-slate-500 font-medium truncate leading-tight mt-0.5">
                   {isGuestMode ? 'Guest Session' : 'Workspace Owner'}
