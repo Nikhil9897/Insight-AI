@@ -1,8 +1,4 @@
 <div align="center">
-  <img src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" width="100%" alt="Insight AI Banner">
-  
-  <br />
-  
   # 🚀 InsightAI - Next-Gen AI Data Analytics
   
   **Talk to your database using Natural Language. Powered by Groq, Gemini, and Local Ollama Fallbacks.**
