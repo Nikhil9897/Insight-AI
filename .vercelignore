@@ -1,3 +1,7 @@
 backend/**
 **/requirements.txt
+requirements.txt
+render.yaml
+Procfile
 .venv/**
+
