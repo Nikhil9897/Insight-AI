@@ -76,15 +76,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   // Sync user profile & projects with backend
-  const syncWorkspaceUser = async (idToken?: string | null) => {
+  const syncWorkspaceUser = async (idToken?: string | null, firebaseUser?: FirebaseUser | null) => {
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (idToken) headers['Authorization'] = `Bearer ${idToken}`;
 
+      // Use a timeout so Render cold starts don't block the user forever
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000); // 10s timeout
+
       const res = await fetch('/api/workspace/sync-user', {
         method: 'POST',
         headers,
+        signal: controller.signal,
       });
+      clearTimeout(timeout);
 
       if (res.ok) {
         const data = await res.json();
@@ -94,7 +100,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setIsGuestMode(data.isGuest || false);
       }
     } catch (err: any) {
-      console.warn('Workspace sync note:', err);
+      console.warn('Workspace sync note (backend may be cold-starting):', err?.message || err);
+      // If backend is unavailable but user IS authenticated via Firebase,
+      // still allow them into the app with a basic profile derived from Firebase identity.
+      if (firebaseUser) {
+        setUserProfile({
+          id: firebaseUser.uid,
+          email: firebaseUser.email || '',
+          displayName: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
+          avatarUrl: firebaseUser.photoURL || undefined,
+        });
+        setProjects([]);
+        setActiveProjectId(null);
+        setIsGuestMode(false);
+
+        // Retry sync once after 8s — by then Render should have woken up
+        setTimeout(() => syncWorkspaceUser(idToken, firebaseUser), 8000);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -112,7 +134,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     getRedirectResult(auth).then(async (cred) => {
       if (cred) {
         const token = await cred.user.getIdToken();
-        await syncWorkspaceUser(token);
+        await syncWorkspaceUser(token, cred.user);
       }
     }).catch((err) => console.warn('Redirect result note:', err));
 
@@ -120,12 +142,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(fbUser);
       if (fbUser) {
         const token = await fbUser.getIdToken();
-        await syncWorkspaceUser(token);
+        await syncWorkspaceUser(token, fbUser);
       } else {
         setUserProfile(null);
         // Fallback to Guest Mode for demo
         setIsGuestMode(true);
-        await syncWorkspaceUser(null);
+        await syncWorkspaceUser(null, null);
       }
     });
 
@@ -139,7 +161,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (auth) {
         const cred = await signInWithEmailAndPassword(auth, email, pass);
         const token = await cred.user.getIdToken();
-        await syncWorkspaceUser(token);
+        await syncWorkspaceUser(token, cred.user);
       }
     } catch (err: any) {
       setAuthError(err.message || 'Login failed.');
@@ -157,7 +179,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const cred = await createUserWithEmailAndPassword(auth, email, pass);
         await updateProfile(cred.user, { displayName: name });
         const token = await cred.user.getIdToken(true);
-        await syncWorkspaceUser(token);
+        await syncWorkspaceUser(token, cred.user);
       }
     } catch (err: any) {
       setAuthError(err.message || 'Registration failed.');
@@ -175,7 +197,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try {
           const cred = await signInWithPopup(auth, googleProvider);
           const token = await cred.user.getIdToken();
-          await syncWorkspaceUser(token);
+          await syncWorkspaceUser(token, cred.user);
         } catch (popupErr: any) {
           if (popupErr.code === 'auth/popup-blocked' || popupErr.code === 'auth/popup-closed-by-user' || popupErr.code === 'auth/cancelled-popup-request') {
             await signInWithRedirect(auth, googleProvider);
