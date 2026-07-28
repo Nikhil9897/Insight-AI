@@ -1,0 +1,240 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    /* Core palette */
+    --color-primary: #2563eb;
+    --color-accent: #16a34a;
+    --color-success: #16a34a;
+    --color-warning: #d97706;
+    --color-danger: #dc2626;
+    --color-bg-workspace: #F6F6F4;
+    --color-card: #ffffff;
+    --color-border: #e5e5e5;
+    --color-border-subtle: #f0f0ef;
+    --color-text-primary: #0f172a;
+    --color-text-secondary: #64748b;
+    --color-text-muted: #94a3b8;
+
+    /* Sidebar */
+    --sidebar-bg: #ffffff;
+    --sidebar-border: #e5e5e5;
+    --sidebar-text: #64748b;
+    --sidebar-text-active: #0f172a;
+    --sidebar-item-hover: rgba(0, 0, 0, 0.04);
+
+    /* Chart palette */
+    --chart-blue: #3b82f6;
+    --chart-cyan: #06b6d4;
+    --chart-emerald: #10b981;
+    --chart-amber: #f59e0b;
+    --chart-violet: #8b5cf6;
+    --chart-pink: #ec4899;
+    --chart-indigo: #6366f1;
+    --chart-teal: #14b8a6;
+  }
+
+  body {
+    background-color: var(--color-bg-workspace);
+    color: var(--color-text-primary);
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+}
+
+/* ── Glassmorphism Utilities ─────────────────────────────────────────────── */
+.glass-card {
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(229, 229, 229, 0.7);
+}
+
+.glass-header {
+  background: rgba(246, 246, 244, 0.94);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.glass-sidebar {
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--sidebar-border);
+}
+
+/* ── Shadow Scale ────────────────────────────────────────────────────────── */
+/* All shadows are elevation-only — no color tints */
+.shadow-soft-xs {
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.04);
+}
+
+.shadow-soft-sm {
+  box-shadow: 0 1px 4px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.04);
+}
+
+.shadow-soft-md {
+  box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.06), 0 2px 6px -2px rgba(0, 0, 0, 0.04);
+}
+
+.shadow-soft-lg {
+  box-shadow: 0 10px 24px -4px rgba(0, 0, 0, 0.08), 0 4px 10px -3px rgba(0, 0, 0, 0.04);
+}
+
+.shadow-soft-xl {
+  box-shadow: 0 20px 40px -6px rgba(0, 0, 0, 0.1), 0 8px 16px -4px rgba(0, 0, 0, 0.05);
+}
+
+/* ── Clean Card ──────────────────────────────────────────────────────────── */
+.chart-card {
+  background: #ffffff;
+  border: 1px solid #e5e5e5;
+  border-radius: 16px;
+  box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.05);
+  transition: box-shadow 0.2s ease;
+}
+
+.chart-card:hover {
+  box-shadow: 0 6px 20px -4px rgba(0, 0, 0, 0.08);
+}
+
+/* ── Gradient Text (landing page only) ───────────────────────────────────── */
+.gradient-text {
+  background: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ── Shimmer ─────────────────────────────────────────────────────────────── */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+
+.animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(229, 229, 229, 0.4) 0%,
+    rgba(245, 245, 244, 0.9) 50%,
+    rgba(229, 229, 229, 0.4) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.8s infinite linear;
+}
+
+/* ── Fade-in-up ──────────────────────────────────────────────────────────── */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.3s ease-out forwards;
+}
+
+/* ── Number Pop ──────────────────────────────────────────────────────────── */
+@keyframes numberPop {
+  0%   { transform: scale(0.94); opacity: 0; }
+  60%  { transform: scale(1.02); }
+  100% { transform: scale(1);    opacity: 1; }
+}
+
+.animate-number-pop {
+  animation: numberPop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* ── Pulse Dot ───────────────────────────────────────────────────────────── */
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.5; transform: scale(0.8); }
+}
+
+.animate-pulse-dot {
+  animation: pulseDot 2s ease-in-out infinite;
+}
+
+/* ── Workspace Scrollbar ─────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(203, 213, 225, 0.6);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.8);
+}
+
+/* ── Recharts Tooltip ────────────────────────────────────────────────────── */
+.recharts-tooltip-wrapper {
+  filter: drop-shadow(0 8px 20px rgba(0, 0, 0, 0.14)) !important;
+}
+
+/* ── Logo Animations ─────────────────────────────────────────────────────── */
+@keyframes logoBar1 {
+  0%, 100% { transform: scaleY(0.84); }
+  50%      { transform: scaleY(1.16); }
+}
+
+@keyframes logoBar2 {
+  0%, 100% { transform: scaleY(1.16); }
+  50%      { transform: scaleY(0.84); }
+}
+
+@keyframes logoBar3 {
+  0%, 100% { transform: scaleY(0.90); }
+  50%      { transform: scaleY(1.20); }
+}
+
+@keyframes logoTrendLine {
+  0%, 100% { transform: translateY(1.5px); }
+  50%      { transform: translateY(-2.5px); }
+}
+
+@keyframes logoDotGlow {
+  0%, 100% { transform: translateY(1.5px) scale(0.92); opacity: 0.85; }
+  50%      { transform: translateY(-3px) scale(1.18); filter: drop-shadow(0 0 6px rgba(168, 85, 247, 0.9)); opacity: 1; }
+}
+
+.animate-logo-bar-1 {
+  animation: logoBar1 2.2s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  transform-origin: bottom;
+}
+
+.animate-logo-bar-2 {
+  animation: logoBar2 2.2s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  transform-origin: bottom;
+}
+
+.animate-logo-bar-3 {
+  animation: logoBar3 2.2s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  transform-origin: bottom;
+}
+
+.animate-logo-trend {
+  animation: logoTrendLine 2.2s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+.animate-logo-dot {
+  animation: logoDotGlow 2.2s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+/* ── Premium Table Rows ──────────────────────────────────────────────────── */
+.ws-table-row {
+  transition: background-color 0.12s ease;
+}
+
+.ws-table-row:hover {
+  background-color: #fafafa;
+}
+
+/* ── Section Divider ─────────────────────────────────────────────────────── */
+.ws-section {
+  background: #ffffff;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+}

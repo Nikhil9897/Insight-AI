@@ -1,0 +1,6 @@
+{
+  "name": "InsightAI – AI Data Analytics",
+  "description": "AI-powered data analytics platform with NL2SQL query execution, self-correction, auto-dataset profiling, and interactive dashboards.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
