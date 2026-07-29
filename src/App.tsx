@@ -23,7 +23,7 @@ import { useAutoSaveWorkspace, loadGuestWorkspaceSnapshot } from './hooks/useAut
 import { InsightLogo } from './components/ui/InsightLogo';
 import { sampleDatasets } from './data/sampleDatasets';
 import { Dataset, QueryResult, ChatResult, QueryHistoryItem, PinnedDashboardItem, ChartConfig } from './types';
-import { LayoutDashboard, Sparkles, Database, History, Plus, FileText, BarChart2, Layers, Network, Upload, Home, Trash2, FolderGit2, Save, CheckCircle2, RefreshCw, Search, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { LayoutDashboard, Sparkles, Database, History, Plus, FileText, BarChart2, Layers, Network, Upload, Home, Trash2, FolderGit2, Save, CheckCircle2, RefreshCw, Search, PanelLeftClose, PanelLeftOpen, AlertCircle } from 'lucide-react';
 
 function WorkspaceInner() {
   const { user, userProfile, isGuestMode, activeProject, activeProjectId, getIdToken, isLoading } = useAuth();
@@ -743,7 +743,11 @@ function WorkspaceInner() {
           <div className={`fixed top-16 right-6 z-50 flex items-center gap-2.5 px-4 py-3 rounded-xl shadow-soft-lg border text-xs font-semibold animate-in fade-in slide-in-from-top-2 duration-200 ${
             saveToast.type === 'success' ? 'bg-slate-900 text-slate-50 border-slate-700' : 'bg-rose-900 text-rose-50 border-rose-700'
           }`}>
-            <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+            {saveToast.type === 'success' ? (
+              <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+            ) : (
+              <AlertCircle className="h-4 w-4 text-rose-400 shrink-0" />
+            )}
             <span>{saveToast.message}</span>
           </div>
         )}

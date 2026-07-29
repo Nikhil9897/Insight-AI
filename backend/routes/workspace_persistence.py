@@ -153,9 +153,9 @@ async def auto_save_workspace(
 @router.post("/projects/{projectId}/save-snapshot")
 async def save_full_snapshot(
     projectId: str,
-    datasets: Optional[List[Dict[str, Any]]] = Body([], embed=True),
-    pinnedCards: Optional[List[Dict[str, Any]]] = Body([], embed=True),
-    queryHistory: Optional[List[Dict[str, Any]]] = Body([], embed=True),
+    datasets: Optional[List[Dict[str, Any]]] = Body([]),
+    pinnedCards: Optional[List[Dict[str, Any]]] = Body([]),
+    queryHistory: Optional[List[Dict[str, Any]]] = Body([]),
     auth_user: Dict[str, Any] = Depends(verify_firebase_token),
     db: Session = Depends(get_db)
 ):
@@ -172,17 +172,29 @@ async def save_full_snapshot(
             continue
         rows = ds.get("data") or []
         rows_to_save = rows[:5000]
+        summary = ds.get("summary") or {}
+        
         existing_ds = db.query(ImportedDataset).filter(ImportedDataset.project_id == projectId, ImportedDataset.dataset_id == ds_id).first()
         if not existing_ds:
-            existing_ds = ImportedDataset(dataset_id=ds_id, project_id=projectId, dataset_name=ds.get("name", "Dataset"), description=ds.get("description", ""), source_type="sample" if ds.get("isSample") else "csv", row_count=ds.get("summary", {}).get("rowCount", len(rows)), column_count=ds.get("summary", {}).get("columnCount", 0), summary_json=ds.get("summary", {}), data_rows_json=rows_to_save)
+            existing_ds = ImportedDataset(
+                dataset_id=ds_id, 
+                project_id=projectId, 
+                dataset_name=ds.get("name", "Dataset"), 
+                description=ds.get("description", ""), 
+                source_type="sample" if ds.get("isSample") else "csv", 
+                row_count=summary.get("rowCount", len(rows)), 
+                column_count=summary.get("columnCount", 0), 
+                summary_json=summary, 
+                data_rows_json=rows_to_save
+            )
             db.add(existing_ds)
         else:
             existing_ds.dataset_name = ds.get("name", existing_ds.dataset_name)
             existing_ds.description = ds.get("description", getattr(existing_ds, "description", "") or "")
-            existing_ds.summary_json = ds.get("summary", existing_ds.summary_json)
+            existing_ds.summary_json = summary
             existing_ds.data_rows_json = rows_to_save
-            existing_ds.row_count = ds.get("summary", {}).get("rowCount", len(rows))
-            existing_ds.column_count = ds.get("summary", {}).get("columnCount", existing_ds.column_count)
+            existing_ds.row_count = summary.get("rowCount", len(rows))
+            existing_ds.column_count = summary.get("columnCount", existing_ds.column_count)
             existing_ds.updated_at = datetime.datetime.utcnow()
         saved_datasets += 1
     if pinnedCards is not None:
