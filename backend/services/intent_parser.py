@@ -320,8 +320,16 @@ class IntentParser:
             q_lower, column_names, column_profiles
         )
 
+        # Check for groupby trigger phrases
+        has_groupby = any(phrase in q_lower for phrase in _GROUPBY_PHRASES)
+
         # 2. Data quality / metadata (short-circuits everything else)
         dq_type = self._detect_data_quality(q_lower)
+        
+        # If it's a row count but it has grouping, it's actually an aggregation, not a simple metadata query!
+        if dq_type == "row_count" and has_groupby:
+            dq_type = None
+
         if dq_type:
             is_meta = dq_type in ("schema", "row_count", "col_count", "summary", "unique")
             ir = QueryIR(
@@ -350,7 +358,7 @@ class IntentParser:
 
         # 6. Group by / dimensions
         dimensions = self._detect_dimensions(
-            q_lower, matched_columns, cat_cols, date_cols, column_names, column_profiles
+            q_lower, matched_columns, cat_cols, date_cols, column_names, column_profiles, has_groupby
         )
 
         # 7. Filters
@@ -380,10 +388,9 @@ class IntentParser:
             time_filter, time_granularity, limit, sort_spec
         )
 
-        # 13. Confidence scoring
+        # 13. Confidence Scoring
         confidence, flags = self._score_confidence(
-            intent, aggregation, metric, dimensions, filters,
-            column_names, num_cols, cat_cols
+            intent, aggregation, metric, dimensions, filters, column_names, num_cols, cat_cols, q_lower
         )
 
         # 14. Chart inference
@@ -611,10 +618,8 @@ class IntentParser:
         date_cols: List[str],
         all_cols: List[str],
         column_profiles: Optional[List[Dict[str, Any]]],
+        has_groupby: bool,
     ) -> List[str]:
-        # Check for groupby trigger phrases
-        has_groupby = any(phrase in q for phrase in _GROUPBY_PHRASES)
-
         dims: List[str] = []
 
         # Matched categorical columns
@@ -947,6 +952,7 @@ class IntentParser:
         all_cols: List[str],
         num_cols: List[str],
         cat_cols: List[str],
+        q_lower: str,
     ) -> Tuple[float, List[str]]:
         score = 1.0
         flags: List[str] = []
@@ -961,6 +967,12 @@ class IntentParser:
             if dim not in all_cols:
                 score -= 0.10
                 flags.append(f"dimension '{dim}' not found in schema")
+
+        # Explicit grouping intent but no dimensions resolved
+        has_groupby = any(phrase in q_lower for phrase in _GROUPBY_PHRASES)
+        if has_groupby and not dimensions:
+            score -= 0.30
+            flags.append("groupby keyword detected but no dimension resolved")
 
         # Aggregation without metric
         if aggregation and aggregation != "COUNT" and not metric:
