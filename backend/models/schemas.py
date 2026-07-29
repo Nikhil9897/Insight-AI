@@ -108,6 +108,7 @@ class QueryResultResponse(BaseModel):
     datasetMemory: Optional[Dict[str, Any]] = None
     semanticMappings: Optional[Dict[str, str]] = None
     queryPlan: Optional[Dict[str, Any]] = None
+    queryIR: Optional[Dict[str, Any]] = None   # Structured Intermediate Representation from IntentParser
     ragContext: Optional[Dict[str, Any]] = None
     explainabilityDetails: Optional[Dict[str, Any]] = None
 

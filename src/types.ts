@@ -112,6 +112,34 @@ export interface DeterministicStats {
   average?: number;
 }
 
+/** Structured Intermediate Representation produced by the IntentParser */
+export interface QueryIR {
+  intent: string;
+  aggregation: string | null;
+  metric: string | null;
+  metrics: string[];
+  dimensions: string[];
+  filters: Array<{
+    column: string;
+    operator: string;
+    value?: any;
+    value2?: any;
+  }>;
+  sort: { column: string; direction: 'ASC' | 'DESC' } | null;
+  limit: number | null;
+  time_filter: { type: string; unit: string; offset: number } | null;
+  time_granularity: string | null;
+  statistical_function: string | null;
+  is_data_quality: boolean;
+  is_metadata: boolean;
+  data_quality_type: string | null;
+  chart: string | null;
+  confidence: number;
+  confidence_flags: string[];
+  raw_query: string;
+  matched_columns: Record<string, string>;
+}
+
 export interface QueryResult {
   query: string;
   sql: string;
@@ -132,6 +160,8 @@ export interface QueryResult {
   chartExplanation?: string;
   executionPath?: string;
   deterministicStats?: DeterministicStats;
+  /** Structured IR produced by the deterministic IntentParser */
+  queryIR?: QueryIR;
 }
 
 /** Response from the conversational /api/analytics/chat endpoint */

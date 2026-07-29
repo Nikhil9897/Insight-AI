@@ -24,6 +24,8 @@ from backend.services.semantic_search_service import semantic_search_service
 from backend.services.conversation_memory_service import conversation_memory_service
 from backend.services.query_planner_service import query_planner_service
 from backend.services.sql_builder_service import sql_builder_service
+from backend.services.intent_parser import intent_parser, QueryIR
+from backend.services.ir_sql_generator import ir_sql_generator
 from backend.config import settings
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
@@ -129,20 +131,24 @@ async def execute_natural_language_query(req: QueryExecutionRequest):
     }
     d_memory = dataset_memory_service.get_or_create_memory(summary_dict, dataset_rows, req.datasetName)
 
-    # Context Layer 2 & 3: Semantic Search & Query Planning
+    # Context Layer 2 & 3: Intent Parsing & Query Planning
     t_sem_start = time.time()
     query_plan = query_planner_service.plan_query(user_query, all_columns, columns_profile)
     semantic_mappings = query_plan.semantic_mappings
+
+    # Extract QueryIR from plan (populated by IntentParser)
+    current_ir: Optional[QueryIR] = None
+    if query_plan.query_ir:
+        try:
+            current_ir = QueryIR(**query_plan.query_ir)
+        except Exception:
+            current_ir = None
+
     t_sem_ms = max(1, int((time.time() - t_sem_start) * 1000))
     t_planner_ms = max(1, int((time.time() - t_planner_start) * 1000))
 
     # Context Layer 4: Conversation Memory
     conv_context = conversation_memory_service.build_context_prompt(session_id, user_query)
-
-    # --- CONFIDENCE ROUTER ---
-    t_build_start = time.time()
-    builder_sql, builder_conf, builder_note = sql_builder_service.build_sql(query_plan, all_columns, columns_profile, user_query)
-    t_build_ms = max(1, int((time.time() - t_build_start) * 1000))
 
     current_sql = ""
     query_result_rows: List[Dict[str, Any]] = []
@@ -152,8 +158,52 @@ async def execute_natural_language_query(req: QueryExecutionRequest):
     t_duck_ms = 0
     t_llm_ms = 0
 
-    # PATH A: High Confidence Deterministic SQL Builder (<5ms Fast Path)
-    if builder_conf >= 0.85 and not query_plan.is_schema_question:
+    # ── METADATA / DATA QUALITY SHORT-CIRCUIT ──────────────────────────────
+    if current_ir and (current_ir.is_metadata or current_ir.is_data_quality):
+        try:
+            meta_sql, meta_explanation = ir_sql_generator.generate(current_ir, all_columns)
+            t_duck_start = time.time()
+            meta_rows, meta_cols = execute_sql_on_data(meta_sql, dataset_rows)
+            t_duck_ms = max(1, int((time.time() - t_duck_start) * 1000))
+            execution_time_ms = max(1, int((time.time() - start_time) * 1000))
+
+            from backend.services.chart_recommender import recommend_chart
+            meta_chart_cfg, meta_chart_exp = recommend_chart(user_query, meta_rows, meta_cols)
+
+            return QueryResultResponse(
+                query=user_query,
+                sql=meta_sql,
+                rows=meta_rows,
+                columns=meta_cols,
+                explanation=meta_explanation,
+                chartConfig=ChartConfig(**meta_chart_cfg),
+                businessInsights=[
+                    f"Data quality query: {current_ir.data_quality_type or 'metadata'}.",
+                    f"Returned {len(meta_rows)} result rows.",
+                    "Query executed deterministically via IR pipeline.",
+                ],
+                agenticLog=[],
+                executionTimeMs=execution_time_ms,
+                timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                confidenceScore=99,
+                executionPath="IR Pipeline — Metadata/Data Quality",
+                datasetMemory=d_memory.model_dump(),
+                semanticMappings=semantic_mappings,
+                queryPlan=query_plan.model_dump(),
+                queryIR=current_ir.model_dump() if current_ir else None,
+            )
+        except Exception as meta_err:
+            logger.warning(f"[Analytics] Metadata query failed: {meta_err}, continuing to normal path.")
+
+    # --- CONFIDENCE ROUTER ---
+    t_build_start = time.time()
+    builder_sql, builder_conf, builder_note = sql_builder_service.build_sql(
+        query_plan, all_columns, columns_profile, user_query
+    )
+    t_build_ms = max(1, int((time.time() - t_build_start) * 1000))
+
+    # PATH A: High Confidence IR Deterministic Path (Sub-5ms)
+    if builder_conf >= 0.75 and not query_plan.is_schema_question:
         try:
             t_duck_start = time.time()
             res_rows, res_cols = execute_sql_on_data(builder_sql, dataset_rows)
@@ -163,70 +213,122 @@ async def execute_natural_language_query(req: QueryExecutionRequest):
                 current_sql = builder_sql
                 query_result_rows = res_rows
                 execution_success = True
-                execution_path = "Deterministic SQL Builder (Sub-5ms Fast-Path)"
+                execution_path = "IR Deterministic Pipeline (High-Confidence)"
                 agentic_log.append(AgenticAttempt(
                     attemptNumber=1,
                     generatedSql=current_sql,
                     status="success",
                     reflectionNote=builder_note
                 ))
-                logger.info(f"[Confidence Router] High Confidence ({builder_conf}). Executed deterministic SQL in {t_duck_ms}ms.")
+                logger.info(f"[Confidence Router] IR confidence={builder_conf:.2f}. SQL executed in {t_duck_ms}ms.")
         except Exception as build_err:
-            logger.info(f"[Confidence Router] Fast-Path SQL Builder failed ({build_err}), falling back to LLM Agentic Recovery...")
+            logger.info(f"[Confidence Router] IR SQL failed ({build_err}), falling back to LLM IR Refiner...")
 
     # PATH B: Low Confidence / Complex NLP Fallback (LLM Agentic Recovery Loop)
     if not execution_success:
-        execution_path = "LLM Agentic Recovery Loop (Complex NLP)"
+        execution_path = "LLM IR Refiner → IR Deterministic SQL"
         has_llm = bool(settings.LLM_PROVIDER == "ollama" or settings.GROQ_API_KEY or settings.GEMINI_API_KEY)
         last_error = ""
 
         if has_llm:
             t_llm_start = time.time()
-            for attempt in range(1, 4):
-                error_context = f"\nPREVIOUS FAILED SQL ATTEMPT: `{current_sql}`\nERROR MSG: {last_error}" if attempt > 1 else ""
 
-                prompt = f"""You are a Lead Data Architect writing ANSI SQL for DuckDB.
-Target Table: 'df' (Pandas DataFrame registered in DuckDB)
-Dataset Schema & Columns: {json.dumps(all_columns)}
-Semantic Term Mappings: {json.dumps(semantic_mappings)}
-Dataset Business Context: {d_memory.business_summary}
-Query Planner Intent: {query_plan.intent} (Metrics: {query_plan.target_metrics}, Dimensions: {query_plan.target_dimensions})
+            # Serialise the current IR for the LLM context
+            current_ir_dict = current_ir.model_dump() if current_ir else {}
+            # Strip large fields to keep the prompt concise
+            ir_for_prompt = {
+                k: v for k, v in current_ir_dict.items()
+                if k not in ("raw_query", "confidence_flags", "matched_columns")
+            }
+
+            for attempt in range(1, 4):
+                error_context = (
+                    f"\nPREVIOUS IR FAILED — SQL ERROR: {last_error}"
+                    if attempt > 1 else ""
+                )
+
+                # ── CRITICAL: LLM returns a corrected IR, NOT SQL ──────────
+                prompt = f"""You are an expert Query Intent Analyst.
+Your ONLY job is to correct a structured Query Intent JSON (IR).
+Do NOT write SQL. The SQL will be generated deterministically from the corrected IR.
+
+Dataset Schema Columns: {json.dumps(all_columns)}
+Numerical Columns (metrics): {json.dumps([c for c in all_columns if any(k in c.lower() for k in ['sales','amount','price','cost','revenue','profit','quantity','salary','score','rate','fare','fee','marks','units'])])}
+Categorical Columns (dimensions): {json.dumps([c for c in all_columns if not any(k in c.lower() for k in ['date','month','year','time','timestamp'])])[:400]}
+Dataset Context: {d_memory.business_summary}
+User Query: "{user_query}"
 {conv_context}
-User Query: "{user_query}"{error_context}
+
+Current IR (may be incorrect or low-confidence):
+{json.dumps(ir_for_prompt, indent=2)}
+{error_context}
+
+RETURN ONLY a corrected JSON IR with these exact fields:
+{{
+  "intent": "aggregation|ranking|filter|trend|distribution|statistical|comparison",
+  "aggregation": "SUM|AVG|COUNT|MIN|MAX|COUNT_DISTINCT|null",
+  "metric": "<exact column name from schema or null>",
+  "metrics": [],
+  "dimensions": ["<exact column names from schema>"],
+  "filters": [],
+  "sort": {{"column": "<column>", "direction": "ASC|DESC"}} or null,
+  "limit": <number or null>,
+  "time_filter": null,
+  "time_granularity": "day|week|month|quarter|year|null",
+  "statistical_function": null,
+  "chart": "kpi|bar|line|scatter|pie|histogram|heatmap|treemap|table",
+  "confidence": 0.95,
+  "confidence_flags": [],
+  "raw_query": "{user_query}",
+  "matched_columns": {{}},
+  "is_data_quality": false,
+  "is_metadata": false,
+  "data_quality_type": null,
+  "reflectionNote": "One sentence explaining what you corrected."
+}}
 
 RULES:
-1. Write ONLY valid ANSI SQL using table name 'df'.
-2. Use double quotes for column names if they contain spaces or special characters (e.g., "Total_Sales", "Category").
-3. Use SUM, AVG, COUNT, MIN, MAX, GROUP BY, ORDER BY, and LIMIT appropriately.
-4. Return ONLY a JSON object: {{"sql": "SELECT ... FROM df ...", "reflectionNote": "short note"}}"""
+1. Only use column names that exist exactly in the dataset schema.
+2. Do NOT write any SQL.
+3. Return ONLY valid JSON."""
 
                 try:
                     llm_res = generate_llm_content_with_fallback(prompt)
                     parsed = json.loads(llm_res)
-                    current_sql = parsed.get("sql", "").strip()
-                    reflection_note = parsed.get("reflectionNote", "Generated SQL candidate")
+                    reflection_note = parsed.pop("reflectionNote", "LLM corrected IR")
+
+                    # Reconstruct a corrected QueryIR from LLM output
+                    corrected_ir = QueryIR(**{k: v for k, v in parsed.items() if k in QueryIR.model_fields})
+                    current_ir = corrected_ir  # Update for downstream explainability
+
+                    # Compile SQL from the corrected IR (never from LLM output directly)
+                    corrected_sql, corrected_explanation = ir_sql_generator.generate(
+                        corrected_ir, all_columns
+                    )
 
                     t_duck_start = time.time()
-                    res_rows, res_cols = execute_sql_on_data(current_sql, dataset_rows)
+                    res_rows, res_cols = execute_sql_on_data(corrected_sql, dataset_rows)
                     t_duck_ms += max(1, int((time.time() - t_duck_start) * 1000))
 
+                    current_sql = corrected_sql
                     query_result_rows = res_rows
                     execution_success = True
                     agentic_log.append(AgenticAttempt(
                         attemptNumber=attempt,
                         generatedSql=current_sql,
                         status="success",
-                        reflectionNote=f"LLM Agentic Recovery Succeeded: {reflection_note}" if attempt > 1 else reflection_note
+                        reflectionNote=f"LLM IR Refiner → Deterministic SQL: {reflection_note}"
                     ))
+                    logger.info(f"[LLM IR Refiner] Attempt {attempt} succeeded. SQL: {current_sql[:80]}")
                     break
                 except Exception as sql_err:
                     last_error = str(sql_err)
                     agentic_log.append(AgenticAttempt(
                         attemptNumber=attempt,
-                        generatedSql=current_sql,
+                        generatedSql=current_sql or "(IR compilation failed)",
                         status="error",
                         errorMessage=last_error,
-                        reflectionNote=f"Execution Failed: {last_error}"
+                        reflectionNote=f"IR Refiner attempt {attempt} failed: {last_error}"
                     ))
             t_llm_ms = max(1, int((time.time() - t_llm_start) * 1000))
 
@@ -348,6 +450,7 @@ RULES:
         "groundedExplanation": explanation_str,
         "semanticMappings": semantic_mappings,
         "queryPlan": query_plan.model_dump(),
+        "queryIR": current_ir.model_dump() if current_ir else None,
         "conversationSessionId": session_id
     }
 
@@ -369,6 +472,8 @@ RULES:
         metrics=query_plan.target_metrics
     )
 
+    ir_confidence_pct = int((current_ir.confidence if current_ir else 1.0) * 100)
+
     return QueryResultResponse(
         query=user_query,
         sql=current_sql,
@@ -379,20 +484,22 @@ RULES:
         businessInsights=business_insights,
         agenticLog=agentic_log,
         executionTimeMs=execution_time_ms,
-        confidenceScore=98 if "Sub-5ms" in execution_path else 95,
+        confidenceScore=ir_confidence_pct,
         confidenceReasons=[
             f"Execution Path: {execution_path}",
+            f"IR Confidence: {ir_confidence_pct}% (deterministic intent parser)",
             "Schema grounded against active dataset columns",
-            "SQL syntax & execution verified on DuckDB engine",
+            "SQL generated from structured QueryIR — LLM never writes SQL directly",
             "Deterministic statistics (Share % & Variance) calculated by DuckDB",
             "Multi-turn conversation context preserved"
         ],
         querySteps=[
-            f"Identified analytical intent '{query_plan.intent}' for '{user_query}'",
-            f"Mapped semantic terms to schema columns: {semantic_mappings}",
+            f"IntentParser classified '{query_plan.intent}' for '{user_query}'",
+            f"QueryIR: agg={current_ir.aggregation if current_ir else 'N/A'}, metric={current_ir.metric if current_ir else 'N/A'}, dims={current_ir.dimensions if current_ir else []}",
             f"Routed via {execution_path}",
-            "Executed query over Pandas DataFrame using DuckDB engine",
-            f"Calculated deterministic share & variance statistics for '{peak_category}' ({peak_share_pct:.1f}%)"
+            "SQL generated deterministically from QueryIR by IRSQLGenerator",
+            "Executed over Pandas DataFrame via DuckDB engine",
+            f"Calculated deterministic stats for '{peak_category}' ({peak_share_pct:.1f}% share)"
         ],
         followUpQuestions=[
             f"What are the top 5 outliers by {fallback_y}?",
@@ -408,6 +515,7 @@ RULES:
         datasetMemory=d_memory.model_dump(),
         semanticMappings=semantic_mappings,
         queryPlan=query_plan.model_dump(),
+        queryIR=current_ir.model_dump() if current_ir else None,
         ragContext=rag_context,
         explainabilityDetails=explainability_details
     )

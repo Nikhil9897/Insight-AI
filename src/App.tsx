@@ -8,6 +8,7 @@ import { SmartChart } from './components/SmartChart';
 import { QueryResultTable } from './components/QueryResultTable';
 import { InsightsBanner } from './components/InsightsBanner';
 import { QueryResultTabs } from './components/QueryResultTabs';
+import { QueryIRPanel } from './components/QueryIRPanel';
 import { DashboardView } from './components/DashboardView';
 import { QueryHistoryView } from './components/QueryHistoryView';
 import { SchemaViewer } from './components/SchemaViewer';
@@ -851,6 +852,13 @@ function WorkspaceInner() {
                             isExecuting={isExecuting}
                           />
                         </FeatureErrorBoundary>
+
+                        {/* 1b. Query IR Explainability Panel */}
+                        {activeQueryResult.queryIR && (
+                          <FeatureErrorBoundary featureName="Query IR Panel">
+                            <QueryIRPanel ir={activeQueryResult.queryIR} />
+                          </FeatureErrorBoundary>
+                        )}
 
                         {/* 2. Visualization */}
                         {activeQueryResult.chartConfig && (

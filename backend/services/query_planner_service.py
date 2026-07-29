@@ -1,14 +1,28 @@
-import re
+"""
+query_planner_service.py — Query Planner (IR-orchestrator)
+==========================================================
+Thin orchestrator that:
+  1. Calls IntentParser.parse() → QueryIR
+  2. Wraps the QueryIR back into the legacy QueryPlan model for backwards
+     compatibility with existing callers that still reference QueryPlan fields.
+  3. Exposes both the QueryPlan and the raw QueryIR to downstream consumers.
+"""
+
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
+
 from pydantic import BaseModel
-from backend.services.semantic_search_service import semantic_search_service
+from backend.services.intent_parser import intent_parser, QueryIR
 
 logger = logging.getLogger("insightai.query_planner")
 
 
 class QueryPlan(BaseModel):
-    intent: str  # AGGREGATION | FILTER | COMPARISON | TREND_ANALYSIS | FACT_RETRIEVAL | SCHEMA_QUESTION | CONVERSATIONAL
+    """
+    Legacy plan model — kept intact for backwards compatibility.
+    All fields are now populated from the QueryIR produced by IntentParser.
+    """
+    intent: str  # AGGREGATION | FILTER | COMPARISON | TREND_ANALYSIS | FACT_RETRIEVAL | SCHEMA_QUESTION | CONVERSATIONAL | STATISTICAL | RANKING | DISTRIBUTION | DATA_QUALITY
     target_metrics: List[str] = []
     target_dimensions: List[str] = []
     filter_conditions: List[Dict[str, Any]] = []
@@ -19,128 +33,113 @@ class QueryPlan(BaseModel):
     is_schema_question: bool = False
     is_conversational: bool = False
     plan_explanation: str = ""
+    # Extended fields — populated from QueryIR
+    query_ir: Optional[Dict[str, Any]] = None
+    aggregation_fn: Optional[str] = None
+    time_granularity: Optional[str] = None
+    statistical_function: Optional[str] = None
+    chart_recommendation: Optional[str] = None
+    confidence: float = 1.0
+
+
+# Map QueryIR intent → legacy plan intent labels
+_INTENT_MAP: Dict[str, str] = {
+    "aggregation":  "AGGREGATION",
+    "ranking":      "AGGREGATION",
+    "filter":       "FILTER",
+    "trend":        "TREND_ANALYSIS",
+    "distribution": "DISTRIBUTION",
+    "statistical":  "STATISTICAL",
+    "comparison":   "COMPARISON",
+    "metadata":     "SCHEMA_QUESTION",
+    "data_quality": "DATA_QUALITY",
+}
+
+_CONVERSATIONAL_SIGNALS = [
+    "summarize", "summary", "overview", "tell me about", "describe",
+    "suitable for", "good for", "useful for", "is this dataset",
+    "recommend", "any missing", "missing data", "unusual", "anomaly",
+    "outlier", "what trend", "what pattern", "how many columns",
+    "how many rows", "what columns", "list columns", "show columns",
+    "explain", "what kind", "what type",
+]
 
 
 class QueryPlannerService:
     """
-    Query Planner & Intent Detection Engine.
-    Pre-analyzes user queries into a structured plan before SQL synthesis.
+    Query Planner — orchestrates IntentParser and wraps results into QueryPlan.
+    All SQL generation logic has been moved to IRSQLGenerator.
     """
 
     def plan_query(
         self,
         query: str,
         column_names: List[str],
-        column_profiles: Optional[List[Dict[str, Any]]] = None
+        column_profiles: Optional[List[Dict[str, Any]]] = None,
     ) -> QueryPlan:
+        """
+        Parse the query via IntentParser and return a QueryPlan wrapping the QueryIR.
+        """
         q_lower = query.lower()
 
-        # Step 1: Semantic Column Mapping
-        mappings = semantic_search_service.resolve_column_mappings(query, column_names)
-        mapped_dict = {k: v[0] for k, v in mappings.items()}
-
-        # Step 2: Intent Classification
-        is_schema_q = any(w in q_lower for w in ["what does", "define", "meaning of", "explain column", "schema", "what is"])
-
-        # Conversational / exploratory signals — routed to /chat, not SQL
-        _CONV_SIGNALS = [
-            "summarize", "summary", "overview", "tell me about", "describe",
-            "suitable for", "good for", "useful for", "is this dataset",
-            "recommend", "any missing", "missing data", "null values",
-            "unusual", "anomaly", "outlier", "what trend", "what pattern",
-            "how many columns", "how many rows", "what columns", "list columns",
-            "show columns", "what format", "explain", "what kind", "what type",
-        ]
-        is_conv = any(w in q_lower for w in _CONV_SIGNALS) or (
-            is_schema_q and not any(w in q_lower for w in ["show", "get", "list", "total", "sum", "count", "top", "filter", "group"])
-        )
-
-        is_agg = any(w in q_lower for w in ["sum", "total", "average", "avg", "mean", "count", "max", "min", "highest", "lowest"])
-        is_filter = any(w in q_lower for w in ["where", "only", "filter", "equal", "greater", "less", "top", "bottom", "for region", "in south"])
-        is_trend = any(w in q_lower for w in ["trend", "month", "year", "date", "over time", "daily", "monthly", "quarterly"])
-        is_comp = any(w in q_lower for w in ["compare", "versus", "vs", "by", "across", "group"])
+        # Detect purely conversational intent first (non-SQL questions)
+        is_conv = any(sig in q_lower for sig in _CONVERSATIONAL_SIGNALS)
+        # Heuristic: very short queries with no SQL-like structure
+        if len(query.split()) <= 4 and not any(
+            w in q_lower for w in ["show", "get", "list", "total", "sum", "count", "top", "group", "by"]
+        ):
+            is_conv = True
 
         if is_conv:
-            intent = "CONVERSATIONAL"
-        elif is_schema_q:
-            intent = "SCHEMA_QUESTION"
-        elif is_trend:
-            intent = "TREND_ANALYSIS"
-        elif is_agg or is_comp:
-            intent = "AGGREGATION"
-        elif is_filter:
-            intent = "FILTER"
-        else:
-            intent = "FACT_RETRIEVAL"
+            logger.info("[QueryPlanner] Conversational intent detected, routing to /chat.")
+            return QueryPlan(
+                intent="CONVERSATIONAL",
+                is_conversational=True,
+                plan_explanation="Conversational query — routed to /chat endpoint.",
+                semantic_mappings={},
+            )
 
-        # Step 3: Identify metrics vs dimensions
-        num_cols = []
-        cat_cols = []
-        if column_profiles:
-            for cp in column_profiles:
-                cname = cp.get("name", "")
-                ctype = cp.get("type", "string")
-                if ctype in ["number", "float", "int", "integer"]:
-                    num_cols.append(cname)
-                else:
-                    cat_cols.append(cname)
-        else:
-            numeric_keywords = ["sales", "profit", "amount", "revenue", "price", "count", "quantity", "discount", "fare", "age", "val", "val_"]
-            num_cols = [c for c in column_names if any(k in c.lower() for k in numeric_keywords)]
-            cat_cols = [c for c in column_names if c not in num_cols]
-            if not num_cols:
-                num_cols = column_names
-            if not cat_cols:
-                cat_cols = column_names
+        # Parse via IntentParser
+        ir: QueryIR = intent_parser.parse(query, column_names, column_profiles)
 
-        # Exclude high-cardinality identifiers (Name, ID, Email, Ticket) from default dimension fallback
-        id_keywords = ["id", "name", "email", "ticket", "ssn", "phone", "uuid"]
-        non_id_cat_cols = [c for c in cat_cols if not any(k in c.lower() for k in id_keywords)]
-        fallback_dim = non_id_cat_cols[0] if non_id_cat_cols else (cat_cols[0] if cat_cols else None)
+        # Build legacy QueryPlan from IR
+        intent_label = _INTENT_MAP.get(ir.intent, "AGGREGATION")
 
-        target_metrics = list(set([mapped_dict[k] for k in mapped_dict if mapped_dict[k] in num_cols]))
-        target_dimensions = list(set([mapped_dict[k] for k in mapped_dict if mapped_dict[k] in cat_cols]))
-
-        # Special check for 'survived' or 'survival' in query
-        for col in column_names:
-            if "surviv" in col.lower() and col not in target_dimensions and col not in target_metrics:
-                if col in cat_cols or any(cp.get("name") == col for cp in (column_profiles or []) if cp.get("type") != "number"):
-                    target_dimensions.append(col)
-                else:
-                    target_metrics.append(col)
-
-        if not target_metrics and num_cols:
-            target_metrics = [num_cols[0]]
-        if not target_dimensions and fallback_dim:
-            target_dimensions = [fallback_dim]
-
-        # Step 4: Extract limit value
-        limit_match = re.search(r'\b(top|limit|first)\s+(\d+)\b', q_lower)
-        limit_val = int(limit_match.group(2)) if limit_match else (5 if ("top" in q_lower or "best" in q_lower) else None)
-
-        sort_column = target_metrics[0] if target_metrics else (column_names[0] if column_names else None)
-        sort_order = "ASC" if ("lowest" in q_lower or "bottom" in q_lower or "least" in q_lower) else "DESC"
-
-        explanation = (
-            f"Query Planner identified intent '{intent}'. "
-            f"Mapped metrics: {target_metrics}, dimensions: {target_dimensions}. "
-            f"Limit: {limit_val or 'all rows'}."
-        )
+        filter_conditions = []
+        for f in ir.filters:
+            filter_conditions.append({
+                "column": f.column,
+                "operator": f.operator,
+                "value": f.value,
+                "value2": f.value2,
+            })
 
         plan = QueryPlan(
-            intent=intent,
-            target_metrics=target_metrics,
-            target_dimensions=target_dimensions,
-            sort_column=sort_column,
-            sort_order=sort_order,
-            limit_val=limit_val,
-            semantic_mappings=mapped_dict,
-            is_schema_question=is_schema_q,
-            is_conversational=is_conv,
-            plan_explanation=explanation
+            intent=intent_label,
+            target_metrics=[ir.metric] if ir.metric else [],
+            target_dimensions=ir.dimensions,
+            filter_conditions=filter_conditions,
+            sort_column=ir.sort.column if ir.sort else (ir.metric or None),
+            sort_order=ir.sort.direction if ir.sort else "DESC",
+            limit_val=ir.limit,
+            semantic_mappings=ir.matched_columns,
+            is_schema_question=(ir.intent == "metadata"),
+            is_conversational=False,
+            plan_explanation=(
+                f"QueryIR: intent={ir.intent}, agg={ir.aggregation}, "
+                f"metric={ir.metric}, dims={ir.dimensions}, "
+                f"confidence={ir.confidence:.2f}."
+            ),
+            # Extended fields
+            query_ir=ir.model_dump(),
+            aggregation_fn=ir.aggregation,
+            time_granularity=ir.time_granularity,
+            statistical_function=ir.statistical_function,
+            chart_recommendation=ir.chart,
+            confidence=ir.confidence,
         )
 
-        logger.info(f"[Query Planner] Generated plan: {plan.model_dump()}")
+        logger.info(f"[QueryPlanner] Plan: {plan.intent} | conf={ir.confidence:.2f} | metric={ir.metric} | dims={ir.dimensions}")
         return plan
 
 
