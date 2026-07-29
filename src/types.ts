@@ -116,6 +116,7 @@ export interface DeterministicStats {
 export interface QueryIR {
   intent: string;
   aggregation: string | null;
+  count_type: string | null;
   metric: string | null;
   metrics: string[];
   dimensions: string[];

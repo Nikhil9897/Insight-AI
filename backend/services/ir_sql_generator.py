@@ -175,27 +175,49 @@ class IRSQLGenerator:
             select_parts.append(_q(d))
 
         # Metric / aggregation expression
-        if agg and metric:
-            if agg == "COUNT_DISTINCT":
+        if agg:
+            if agg == "COUNT":
+                if hasattr(ir, "count_type") and ir.count_type == "distinct" and metric:
+                    agg_expr = f"COUNT(DISTINCT {_q(metric)})"
+                    alias = f"Count_Distinct_{_alias(metric)}"
+                elif hasattr(ir, "count_type") and ir.count_type == "records":
+                    agg_expr = "COUNT(*)"
+                    alias = "Record_Count"
+                elif metric:
+                    agg_expr = f"COUNT({_q(metric)})"
+                    alias = f"COUNT_{_alias(metric)}"
+                else:
+                    agg_expr = "COUNT(*)"
+                    alias = "Record_Count"
+                
+                # COUNT is an integer, no need for ROUND()
+                select_parts.append(f'{agg_expr} AS "{alias}"')
+                explanation_parts.append(f"{agg}({metric or '*'})")
+                metric_alias = alias
+
+            elif agg == "COUNT_DISTINCT" and metric: # Fallback just in case
                 agg_expr = f"COUNT(DISTINCT {_q(metric)})"
                 alias = f"Count_Distinct_{_alias(metric)}"
-            elif agg == "COUNT" and not metric:
-                agg_expr = "COUNT(*)"
-                alias = "Record_Count"
-            else:
+                select_parts.append(f'{agg_expr} AS "{alias}"')
+                explanation_parts.append(f"{agg}({metric})")
+                metric_alias = alias
+                
+            elif metric:
                 fn = _AGG_SQL_FN.get(agg, "SUM")
                 agg_expr = f"{fn}({_q(metric)})"
                 alias = f"{agg}_{_alias(metric)}"
-            select_parts.append(f"ROUND({agg_expr}, 2) AS \"{alias}\"")
-            explanation_parts.append(f"{agg}({metric})")
-            metric_alias = alias
+                select_parts.append(f'ROUND({agg_expr}, 2) AS "{alias}"')
+                explanation_parts.append(f"{agg}({metric})")
+                metric_alias = alias
+            else:
+                # Should be unreachable for well-formed IR
+                select_parts.append("*")
+                metric_alias = None
+
         elif metric and not agg:
             # No explicit aggregation — just select the metric
             select_parts.append(_q(metric))
             metric_alias = metric
-        elif agg == "COUNT" and not metric:
-            select_parts.append('COUNT(*) AS "Record_Count"')
-            metric_alias = "Record_Count"
         else:
             select_parts.append("*")
             metric_alias = None

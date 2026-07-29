@@ -239,7 +239,10 @@ export const QueryIRPanel: React.FC<QueryIRPanelProps> = ({ ir }) => {
             <span className="text-[9px] font-semibold uppercase tracking-widest text-slate-400 block mb-1">Aggregation</span>
             <div className="flex items-center gap-1">
               <Hash className="h-3 w-3 text-violet-400 shrink-0" />
-              <span className="text-xs font-semibold text-violet-700">{AGG_LABELS[ir.aggregation] || ir.aggregation}</span>
+              <span className="text-xs font-semibold text-violet-700">
+                {AGG_LABELS[ir.aggregation] || ir.aggregation}
+                {ir.count_type ? ` (${ir.count_type})` : ''}
+              </span>
             </div>
           </div>
         )}

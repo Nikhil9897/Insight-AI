@@ -53,6 +53,7 @@ class QueryIR(BaseModel):
                                    # statistical | comparison | metadata | data_quality
     # Aggregation
     aggregation: Optional[str] = None     # SUM | AVG | COUNT | MIN | MAX | COUNT_DISTINCT
+    count_type: Optional[str] = None      # records | column | distinct
     metric: Optional[str] = None          # primary numeric column
     metrics: List[str] = []               # multiple metrics when present
 
@@ -349,12 +350,16 @@ class IntentParser:
         stat_fn = self._detect_statistical_function(q_lower)
 
         # 4. Aggregation
-        aggregation = self._detect_aggregation(q_lower)
+        aggregation, count_type = self._detect_aggregation(q_lower)
 
         # 5. Metric column
         metric, extra_metrics = self._detect_metric(
             q_lower, matched_columns, num_cols, column_names
         )
+        
+        # Override metric if it is a record count
+        if aggregation == "COUNT" and count_type == "records":
+            metric = None
 
         # 6. Group by / dimensions
         dimensions = self._detect_dimensions(
@@ -414,6 +419,7 @@ class IntentParser:
         ir = QueryIR(
             intent=intent,
             aggregation=effective_aggregation,
+            count_type=count_type,
             metric=metric,
             metrics=extra_metrics,
             dimensions=dimensions,
@@ -573,12 +579,26 @@ class IntentParser:
     # 4. Aggregation Detection
     # ------------------------------------------------------------------
 
-    def _detect_aggregation(self, q: str) -> Optional[str]:
+    def _detect_aggregation(self, q: str) -> Tuple[Optional[str], Optional[str]]:
+        # Check for explicit record count first
+        record_count_keywords = [
+            "record count", "row count", "number of records", "how many rows",
+            "count rows", "total records", "how many records"
+        ]
+        for kw in record_count_keywords:
+            if re.search(rf"\b{re.escape(kw)}\b", q):
+                return "COUNT", "records"
+
         for agg in _AGG_ORDER:
             for kw in _AGG_KEYWORDS[agg]:
                 if re.search(rf"\b{re.escape(kw)}\b", q):
-                    return agg
-        return None
+                    # if it's count, we need to know if it's a distinct count
+                    if agg == "COUNT_DISTINCT":
+                        return "COUNT", "distinct"
+                    elif agg == "COUNT":
+                        return "COUNT", "column"
+                    return agg, None
+        return None, None
 
     # ------------------------------------------------------------------
     # 5. Metric Detection
