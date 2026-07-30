@@ -577,7 +577,7 @@ function WorkspaceInner() {
             { id: 'profiler', label: 'Dataset Profile', icon: Database, status: 'bg-emerald-400' },
             { id: 'query', label: 'NL2SQL Explorer', icon: Sparkles, status: 'bg-blue-400' },
             { id: 'dashboard', label: 'Executive Dashboard', icon: LayoutDashboard, count: activePinnedItems.length, status: 'bg-indigo-400' },
-            { id: 'schema', label: 'Schema & ERD Model', icon: Network, status: 'bg-violet-400' },
+            { id: 'schema', label: 'Database Intelligence', icon: Network, status: 'bg-violet-400' },
             { id: 'history', label: 'Query Audit Log', icon: History, status: 'bg-slate-300' },
           ].map((item) => {
             const Icon = item.icon;
@@ -912,7 +912,7 @@ function WorkspaceInner() {
                 )}
 
                 {activeTab === 'schema' && (
-                  <FeatureErrorBoundary featureName="Schema & ERD Viewer">
+                  <FeatureErrorBoundary featureName="Database Intelligence">
                     <SchemaViewer
                       dataset={activeDataset}
                       allDatasets={datasets}

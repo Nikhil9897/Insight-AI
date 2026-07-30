@@ -4,7 +4,8 @@ from pydantic import BaseModel
 from backend.services.db_connector_service import (
     test_db_connection,
     introspect_schema_details,
-    import_table_snapshot_rows
+    import_table_snapshot_rows,
+    introspect_full_schema,
 )
 from backend.services.excel_service import parse_excel_workbook
 
@@ -53,6 +54,46 @@ async def api_introspect_schema(req: ConnectionTestRequest):
         password=req.password
     )
     return {"tables": tables}
+
+@router.post("/schema-overview")
+async def api_schema_overview(req: ConnectionTestRequest):
+    """
+    Returns the full relational schema for any supported database:
+    tables, columns, SQL types, primary keys, foreign keys, row counts, file size.
+    This is the primary data source for the Schema Metadata Engine on the frontend.
+    Supports: SQLite (tmpPath via query param), PostgreSQL, MySQL.
+    """
+    try:
+        schema = introspect_full_schema(
+            source_type=req.sourceType,
+            host=req.host,
+            port=req.port,
+            database=req.database,
+            username=req.username,
+            password=req.password,
+        )
+        return schema
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Schema introspection failed: {str(e)}")
+
+@router.post("/schema-overview-sqlite")
+async def api_schema_overview_sqlite(
+    tmpPath: str = Body(..., embed=True),
+    dbName: str = Body("Database", embed=True),
+):
+    """
+    Returns the full relational schema for an already-uploaded SQLite database
+    identified by its server-side tmpPath.
+    """
+    try:
+        schema = introspect_full_schema(
+            source_type="sqlite",
+            sqlite_path=tmpPath,
+            database=dbName,
+        )
+        return schema
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"SQLite schema introspection failed: {str(e)}")
 
 @router.post("/import-table")
 async def api_import_table(req: ImportTableRequest):
