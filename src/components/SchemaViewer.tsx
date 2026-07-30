@@ -11,11 +11,9 @@ import { Card } from './ui/Card';
 import { EmptyState } from './ui/EmptyState';
 import {
   buildSchemaFromDatasets,
-  DatabaseSchema, SchemaTable, SchemaRelationship, EntityClass,
-  groupTablesByEntity, getTableRelationships, formatFileSize,
-  ENTITY_CLASS_COLORS, ENTITY_CLASS_LABELS,
+  DatabaseSchema, SchemaTable, SchemaRelationship,
+  getTableRelationships, formatFileSize,
   findJoinPath, JoinPath, JoinPathStep,
-  groupTablesByBusinessDomain, BusinessDomain, DOMAIN_COLOR_PALETTE,
 } from '../lib/schemaMetadataEngine';
 
 interface SchemaViewerProps {
@@ -49,14 +47,13 @@ const ERD_H = 190;
 
 function layoutTables(tables: SchemaTable[]): Record<string, { x: number; y: number }> {
   const positions: Record<string, { x: number; y: number }> = {};
-  const order: EntityClass[] = ['core', 'transaction', 'reference', 'junction', 'unknown'];
-  const groups = groupTablesByEntity(tables);
-  const colX = [60, 340, 620, 900, 1180];
+  const cols = 5;
+  const gapX = 280;
   const gapY = 230;
-  order.forEach((cls, ci) => {
-    groups[cls].forEach((t, ri) => {
-      positions[t.name] = { x: colX[ci], y: 40 + ri * gapY };
-    });
+  tables.forEach((t, i) => {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    positions[t.name] = { x: 60 + col * gapX, y: 40 + row * gapY };
   });
   return positions;
 }
@@ -162,15 +159,6 @@ const ErdCanvas: React.FC<ErdCanvasProps> = ({ schema, selectedTable, onSelectTa
         <span className="text-[10px] font-bold text-slate-400 px-1">{Math.round(zoom * 100)}%</span>
       </div>
 
-      {/* Legend */}
-      <div className="absolute top-3 left-3 z-20 flex items-center gap-2.5 bg-white/95 border border-slate-200 rounded-xl px-3 py-1.5 shadow-soft-sm backdrop-blur-sm">
-        {(['core','transaction','reference','junction'] as EntityClass[]).map(cls => (
-          <div key={cls} className="flex items-center gap-1">
-            <div className={`w-2 h-2 rounded-full border ${ENTITY_CLASS_COLORS[cls].bg} ${ENTITY_CLASS_COLORS[cls].border}`} />
-            <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">{cls}</span>
-          </div>
-        ))}
-      </div>
 
       {/* Canvas */}
       <div ref={containerRef} className="w-full h-full overflow-hidden" style={{ cursor: panDrag ? 'grabbing' : 'grab' }}
@@ -210,7 +198,6 @@ const ErdCanvas: React.FC<ErdCanvasProps> = ({ schema, selectedTable, onSelectTa
             const isSel = selectedTable === table.name;
             const isConn = connected.has(table.name);
             const dimmed = selectedTable && !isSel && !isConn;
-            const colors = ENTITY_CLASS_COLORS[table.entityClass];
 
             return (
               <div key={table.name}
@@ -225,9 +212,6 @@ const ErdCanvas: React.FC<ErdCanvasProps> = ({ schema, selectedTable, onSelectTa
                     <Table className={`h-3.5 w-3.5 shrink-0 ${isSel ? 'text-blue-600' : 'text-slate-400'}`} />
                     <span className="text-[11px] font-bold text-slate-800 truncate">{table.name}</span>
                   </div>
-                  <span className={`text-[8px] font-bold px-1 py-0.5 rounded border shrink-0 ml-1 ${colors.bg} ${colors.text} ${colors.border}`}>
-                    {ENTITY_CLASS_LABELS[table.entityClass].split(' ')[0].toUpperCase()}
-                  </span>
                 </div>
 
                 {/* Columns */}
@@ -278,9 +262,7 @@ export const SchemaViewer: React.FC<SchemaViewerProps> = ({ dataset, allDatasets
   const [tableSearch, setTableSearch] = useState('');
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [recentTables, setRecentTables] = useState<string[]>([]);
-  const [expandedGroups, setExpandedGroups] = useState<Set<EntityClass>>(
-    new Set(['core', 'transaction', 'reference', 'junction', 'unknown'])
-  );
+
   // Join Path Explorer state
   const [joinFrom, setJoinFrom] = useState<string>('');
   const [joinTo, setJoinTo] = useState<string>('');
@@ -319,9 +301,7 @@ export const SchemaViewer: React.FC<SchemaViewerProps> = ({ dataset, allDatasets
     setFavorites(prev => { const n = new Set(prev); n.has(name) ? n.delete(name) : n.add(name); return n; });
   };
 
-  const toggleGroup = (cls: EntityClass) => {
-    setExpandedGroups(prev => { const n = new Set(prev); n.has(cls) ? n.delete(cls) : n.add(cls); return n; });
-  };
+
 
   // Legacy getSqlType for original attribute dictionary
   const getSqlType = (col: ColumnProfile): string => {
@@ -345,19 +325,14 @@ export const SchemaViewer: React.FC<SchemaViewerProps> = ({ dataset, allDatasets
     );
   }
 
-  const tableGroups = groupTablesByEntity(schema.tables);
-  const businessDomains = React.useMemo(
-    () => groupTablesByBusinessDomain(schema.tables, schema.relationships),
-    [schema]
-  );
+
   const relInfo = selectedSchemaTable ? getTableRelationships(selectedSchemaTable.name, schema.relationships) : null;
   const activeDataset = allDatasets.find(d => d.name === selectedSchemaTable?.name) || dataset;
   const activeColumns = activeDataset?.summary?.columns || [];
   const filteredOrigCols = activeColumns.filter(c => c.name.toLowerCase().includes(columnSearch.toLowerCase()));
   const numCount = activeColumns.filter(c => c.type === 'number').length;
   const catCount = activeColumns.length - numCount;
-  const healthColor = schema.healthScore >= 80 ? 'text-emerald-600' : schema.healthScore >= 60 ? 'text-amber-600' : 'text-rose-500';
-  const healthBg = schema.healthScore >= 80 ? 'bg-emerald-500' : schema.healthScore >= 60 ? 'bg-amber-500' : 'bg-rose-500';
+
 
   const handleFindJoinPath = () => {
     if (!joinFrom || !joinTo) return;
@@ -417,8 +392,6 @@ export const SchemaViewer: React.FC<SchemaViewerProps> = ({ dataset, allDatasets
             { label: 'Foreign Keys', value: schema.fkCount },
             { label: 'Total Rows', value: schema.totalRows.toLocaleString() },
             { label: 'DB Size', value: formatFileSize(schema.fileSizeBytes) },
-            { label: 'Core Entities', value: tableGroups.core.length },
-            { label: 'Transactions', value: tableGroups.transaction.length },
           ].map(m => (
             <div key={m.label} className="bg-slate-50 rounded-xl p-2.5 border border-slate-100 text-center">
               <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wide leading-none mb-1">{m.label}</div>
@@ -428,29 +401,7 @@ export const SchemaViewer: React.FC<SchemaViewerProps> = ({ dataset, allDatasets
         </div>
       </div>
 
-      {/* ── Business Metrics Strip ── */}
-      {schema.tables.length > 1 && (
-        <div className="bg-white border border-slate-200 rounded-2xl px-4 py-3 shadow-soft-xs schema-panel-enter">
-          <div className="flex items-center gap-2 mb-2.5">
-            <Activity className="h-4 w-4 text-blue-600" />
-            <span className="text-xs font-bold text-slate-900">Table Volumes</span>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {[...schema.tables].sort((a, b) => b.rowCount - a.rowCount).slice(0, 8).map(t => {
-              const colors = ENTITY_CLASS_COLORS[t.entityClass];
-              const isSel = selectedSchemaTable?.name === t.name;
-              return (
-                <button key={t.name} onClick={() => handleSelectTable(t.name)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all hover:shadow-soft-xs ${isSel ? 'bg-blue-600 text-white border-blue-600' : `${colors.bg} ${colors.text} ${colors.border}`}`}
-                >
-                  <span>{t.name}</span>
-                  <span className={`text-[10px] font-bold ${isSel ? 'text-blue-200' : 'opacity-60'}`}>{t.rowCount.toLocaleString()}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
+
 
       {/* ── ENTITY CATALOG TAB ── */}
       {activeTab === 'catalog' && (
@@ -496,71 +447,6 @@ export const SchemaViewer: React.FC<SchemaViewerProps> = ({ dataset, allDatasets
             </div>
           </div>
 
-          {/* Business Entity Catalog */}
-          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-soft-xs">
-            <div className="flex items-center gap-2 border-b border-slate-100 pb-3 mb-4">
-              <FolderTree className="h-4 w-4 text-blue-600" />
-              <h2 className="text-sm font-bold text-slate-900">Business Entity Catalog</h2>
-              <span className="text-[10px] text-slate-400 font-medium">Auto-grouped by FK graph proximity — schema-driven</span>
-              <span className="ml-auto text-[10px] bg-blue-100 text-blue-700 font-bold px-2 py-0.5 rounded-full">{businessDomains.length} domains</span>
-            </div>
-
-            {businessDomains.length === 0 ? (
-              <div className="text-center py-8 text-slate-400 text-sm">No tables to display.</div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {businessDomains.map(domain => {
-                  const palette = DOMAIN_COLOR_PALETTE[domain.colorIndex % DOMAIN_COLOR_PALETTE.length];
-                  return (
-                    <div key={domain.name} className={`rounded-2xl border p-4 ${palette.bg} ${palette.border} hover:shadow-soft-sm transition-all`}>
-                      <div className="flex items-center gap-2 mb-3">
-                        <div className={`w-2.5 h-2.5 rounded-full ${palette.dot} shrink-0`} />
-                        <span className={`text-xs font-extrabold ${palette.text}`}>{domain.name}</span>
-                        <span className={`ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-white/60 ${palette.text}`}>
-                          {domain.tables.length} {domain.tables.length === 1 ? 'table' : 'tables'}
-                        </span>
-                      </div>
-                      <div className="space-y-1.5">
-                        {domain.tables.map(t => {
-                          const colors = ENTITY_CLASS_COLORS[t.entityClass];
-                          return (
-                            <button
-                              key={t.name}
-                              onClick={() => { handleSelectTable(t.name); setActiveTab('schema'); }}
-                              className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-white/70 hover:bg-white border border-white/50 text-left transition-all text-xs`}
-                            >
-                              <Table className="h-3 w-3 text-slate-400 shrink-0" />
-                              <span className="font-semibold text-slate-800 flex-1 truncate">{t.name}</span>
-                              <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded ${colors.bg} ${colors.text} ${colors.border} border shrink-0`}>
-                                {ENTITY_CLASS_LABELS[t.entityClass].split(' ')[0]}
-                              </span>
-                              <span className="text-[9px] text-slate-400 shrink-0">{t.rowCount.toLocaleString()}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                      {/* FK connections preview */}
-                      {schema.relationships.filter(r => domain.tables.some(t => t.name === r.fromTable) && domain.tables.some(t => t.name === r.toTable)).length > 0 && (
-                        <div className="mt-2.5 pt-2 border-t border-white/40">
-                          <div className="text-[8px] font-bold text-slate-400 uppercase tracking-wider mb-1">Internal FK Chains</div>
-                          {schema.relationships
-                            .filter(r => domain.tables.some(t => t.name === r.fromTable) && domain.tables.some(t => t.name === r.toTable))
-                            .slice(0, 3)
-                            .map((r, i) => (
-                              <div key={i} className="flex items-center gap-1 text-[9px] font-mono text-slate-500">
-                                <span>{r.fromTable}</span>
-                                <ArrowRight className="h-2.5 w-2.5 shrink-0" />
-                                <span>{r.toTable}</span>
-                              </div>
-                            ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
 
           {/* Join Path Explorer */}
           {schema.tables.length > 1 && (
@@ -740,7 +626,6 @@ export const SchemaViewer: React.FC<SchemaViewerProps> = ({ dataset, allDatasets
                       <span className="font-mono text-[10px] text-slate-700">{rel.fromColumn}</span>
                       <ArrowRight className="h-3 w-3 text-slate-400 shrink-0" />
                       <span className="font-mono text-[10px] text-blue-700 font-bold">{rel.toTable}.{rel.toColumn}</span>
-                      <span className="ml-auto text-[9px] bg-blue-50 text-blue-600 px-1.5 rounded border border-blue-200 font-bold">{rel.cardinality}</span>
                     </div>
                   ))}
                   {relInfo.referencedBy.map((rel, i) => (
@@ -748,7 +633,6 @@ export const SchemaViewer: React.FC<SchemaViewerProps> = ({ dataset, allDatasets
                       <span className="font-mono text-[10px] text-violet-700 font-bold">{rel.fromTable}.{rel.fromColumn}</span>
                       <ArrowRight className="h-3 w-3 text-violet-400 shrink-0" />
                       <span className="font-mono text-[10px] text-slate-700">{rel.toColumn}</span>
-                      <span className="ml-auto text-[9px] bg-violet-100 text-violet-600 px-1.5 rounded border border-violet-200 font-bold">1:∞</span>
                     </div>
                   ))}
                   {relInfo.references.length === 0 && relInfo.referencedBy.length === 0 && (
@@ -764,9 +648,6 @@ export const SchemaViewer: React.FC<SchemaViewerProps> = ({ dataset, allDatasets
                     <Layers className="h-4 w-4 text-blue-600" />
                     <span className="text-xs font-bold text-slate-900">Table Statistics</span>
                   </div>
-                  <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${ENTITY_CLASS_COLORS[selectedSchemaTable.entityClass].bg} ${ENTITY_CLASS_COLORS[selectedSchemaTable.entityClass].text}`}>
-                    {ENTITY_CLASS_LABELS[selectedSchemaTable.entityClass]}
-                  </span>
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   {[
@@ -824,32 +705,19 @@ export const SchemaViewer: React.FC<SchemaViewerProps> = ({ dataset, allDatasets
               )}
 
               <div className="space-y-1.5 max-h-80 overflow-y-auto pr-1">
-                {(['core','transaction','reference','junction','unknown'] as EntityClass[]).map(cls => {
-                  const group = tableGroups[cls].filter(t => t.name.toLowerCase().includes(tableSearch.toLowerCase()));
-                  if (!group.length) return null;
-                  const colors = ENTITY_CLASS_COLORS[cls];
-                  const expanded = expandedGroups.has(cls);
-                  return (
-                    <div key={cls}>
-                      <button onClick={() => toggleGroup(cls)} className="w-full flex items-center gap-1.5 px-1 py-1 text-[9px] font-bold text-slate-500 uppercase tracking-wider hover:text-slate-700">
-                        {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                        <span className={colors.text}>{ENTITY_CLASS_LABELS[cls]}</span>
-                        <span className={`ml-auto text-[8px] ${colors.bg} ${colors.text} px-1.5 py-0.5 rounded-full border ${colors.border}`}>{group.length}</span>
+                {schema.tables
+                  .filter(t => t.name.toLowerCase().includes(tableSearch.toLowerCase()))
+                  .map(t => (
+                    <button key={t.name} onClick={() => handleSelectTable(t.name)}
+                      className={`group w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs text-left transition-all ${selectedSchemaTable?.name === t.name ? 'bg-blue-50 border border-blue-200 text-blue-700 font-bold' : 'text-slate-600 hover:bg-slate-50 border border-transparent'}`}>
+                      <div className="w-1.5 h-1.5 rounded-full bg-slate-300 shrink-0" />
+                      <span className="flex-1 truncate font-medium">{t.name}</span>
+                      <span className="text-[9px] text-slate-400">{t.rowCount.toLocaleString()}</span>
+                      <button onClick={e => toggleFavorite(t.name, e)} className="opacity-0 group-hover:opacity-100 transition-opacity">
+                        {favorites.has(t.name) ? <Star className="h-3 w-3 text-amber-400 fill-amber-400" /> : <StarOff className="h-3 w-3 text-slate-300" />}
                       </button>
-                      {expanded && group.map(t => (
-                        <button key={t.name} onClick={() => handleSelectTable(t.name)}
-                          className={`group w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs text-left transition-all ml-2 ${selectedSchemaTable?.name === t.name ? 'bg-blue-50 border border-blue-200 text-blue-700 font-bold' : 'text-slate-600 hover:bg-slate-50 border border-transparent'}`}>
-                          <div className={`w-1.5 h-1.5 rounded-full shrink-0 border ${colors.bg} ${colors.border}`} />
-                          <span className="flex-1 truncate font-medium">{t.name}</span>
-                          <span className="text-[9px] text-slate-400">{t.rowCount.toLocaleString()}</span>
-                          <button onClick={e => toggleFavorite(t.name, e)} className="opacity-0 group-hover:opacity-100 transition-opacity">
-                            {favorites.has(t.name) ? <Star className="h-3 w-3 text-amber-400 fill-amber-400" /> : <StarOff className="h-3 w-3 text-slate-300" />}
-                          </button>
-                        </button>
-                      ))}
-                    </div>
-                  );
-                })}
+                    </button>
+                ))}
               </div>
             </div>
 
@@ -952,7 +820,6 @@ export const SchemaViewer: React.FC<SchemaViewerProps> = ({ dataset, allDatasets
                                   <span className="font-mono text-slate-700">{rel.fromColumn}</span>
                                   <ArrowRight className="h-3 w-3 text-slate-400 shrink-0" />
                                   <span className="font-mono text-blue-700 font-bold">{rel.toTable}.{rel.toColumn}</span>
-                                  <span className="ml-auto text-[9px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded border border-blue-200 font-bold">{rel.cardinality}</span>
                                 </div>
                               ))}
                             </div>
@@ -967,7 +834,6 @@ export const SchemaViewer: React.FC<SchemaViewerProps> = ({ dataset, allDatasets
                                   <span className="font-mono text-violet-700 font-bold">{rel.fromTable}.{rel.fromColumn}</span>
                                   <ArrowRight className="h-3 w-3 text-violet-400 shrink-0" />
                                   <span className="font-mono text-slate-700">{rel.toColumn}</span>
-                                  <span className="ml-auto text-[9px] bg-violet-100 text-violet-600 px-1.5 py-0.5 rounded border border-violet-200 font-bold">1:∞</span>
                                 </div>
                               ))}
                             </div>
@@ -979,55 +845,29 @@ export const SchemaViewer: React.FC<SchemaViewerProps> = ({ dataset, allDatasets
                 </>
               )}
 
-              {/* Database Health */}
-              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-soft-xs schema-panel-enter">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
-                  <div className="flex items-center gap-2">
-                    <Shield className="h-4 w-4 text-blue-600" />
-                    <h3 className="text-sm font-bold text-slate-900">Database Health</h3>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className={`text-2xl font-black ${healthColor}`}>{schema.healthScore}</span>
-                    <span className="text-xs text-slate-400 font-medium">/ 100</span>
-                  </div>
-                </div>
-                <div className="h-2 bg-slate-100 rounded-full overflow-hidden mb-4">
-                  <div className={`h-full rounded-full transition-all duration-700 ${healthBg}`} style={{ width: `${schema.healthScore}%` }} />
-                </div>
-                <div className="space-y-2.5">
-                  {schema.healthDetails.map((d, i) => (
-                    <div key={i} className="flex items-start gap-2.5 text-xs">
-                      <HealthIcon status={d.status} />
-                      <div className="flex-1 min-w-0">
-                        <span className="font-semibold text-slate-800">{d.label}</span>
-                        <span className="text-slate-500 ml-1.5">{d.detail}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
 
-              {/* Smart Questions */}
-              {schema.smartQuestions.length > 0 && onAskQuestion && (
-                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-soft-xs schema-panel-enter">
-                  <div className="flex items-center gap-2 border-b border-slate-100 pb-3 mb-4">
-                    <Sparkles className="h-4 w-4 text-blue-600" />
-                    <h3 className="text-sm font-bold text-slate-900">Smart Question Suggestions</h3>
-                    <span className="text-[10px] text-slate-400 font-medium">Auto-generated from schema signals</span>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {schema.smartQuestions.map((q, i) => (
-                      <button key={i} onClick={() => onAskQuestion(q)}
-                        className="flex items-center gap-1.5 bg-blue-50 text-blue-700 border border-blue-200 px-3 py-1.5 rounded-full text-xs font-semibold hover:bg-blue-100 transition-all hover:shadow-soft-xs active:scale-95">
-                        <Sparkles className="h-3 w-3 shrink-0" />
-                        {q}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
           </div>
+
+          {/* Smart Questions */}
+          {schema.smartQuestions && schema.smartQuestions.length > 0 && onAskQuestion && (
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-soft-xs schema-panel-enter">
+              <div className="flex items-center gap-2 border-b border-slate-100 pb-3 mb-4">
+                <Sparkles className="h-4 w-4 text-blue-600" />
+                <h3 className="text-sm font-bold text-slate-900">Smart Question Suggestions</h3>
+                <span className="text-[10px] text-slate-400 font-medium">Auto-generated from strictly validated schema signals</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {schema.smartQuestions.map((q, i) => (
+                  <button key={i} onClick={() => onAskQuestion(q)}
+                    className="flex items-center gap-1.5 bg-blue-50 text-blue-700 border border-blue-200 px-3 py-1.5 rounded-full text-xs font-semibold hover:bg-blue-100 transition-all hover:shadow-soft-xs active:scale-95">
+                    <Sparkles className="h-3 w-3 shrink-0" />
+                    {q}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* ── Attribute Schema Dictionary (preserved) ── */}
           <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-soft-xs space-y-4 schema-panel-enter">

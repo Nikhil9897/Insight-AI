@@ -113,21 +113,23 @@ async def api_import_table(req: ImportTableRequest):
 
 @router.post("/upload-excel")
 async def api_upload_excel(file: UploadFile = File(...)):
-    if not file.filename.endswith(('.xlsx', '.xls')):
+    filename = file.filename or ""
+    if not filename.endswith(('.xlsx', '.xls')):
         raise HTTPException(status_code=400, detail="Invalid file format. Please upload an Excel workbook (.xlsx, .xls).")
     
     contents = await file.read()
     try:
-        datasets = parse_excel_workbook(contents, file.filename)
+        datasets = parse_excel_workbook(contents, filename)
         if not datasets:
             raise HTTPException(status_code=400, detail="Excel workbook contains zero non-empty sheets.")
-        return {"filename": file.filename, "datasets": datasets}
+        return {"filename": filename, "datasets": datasets}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to parse Excel workbook: {str(e)}")
 
 @router.post("/upload-sqlite")
 async def api_upload_sqlite(file: UploadFile = File(...)):
-    if not file.filename.endswith(('.db', '.sqlite', '.sqlite3')):
+    filename = file.filename or ""
+    if not filename.endswith(('.db', '.sqlite', '.sqlite3')):
         raise HTTPException(status_code=400, detail="Invalid file format. Please upload a SQLite database file (.db, .sqlite).")
 
     contents = await file.read()
@@ -138,7 +140,7 @@ async def api_upload_sqlite(file: UploadFile = File(...)):
 
         tmp_path = conn_res.get("tmpPath")
         tables = introspect_schema_details(source_type='sqlite', sqlite_path=tmp_path)
-        return {"filename": file.filename, "tables": tables, "tmpPath": tmp_path}
+        return {"filename": filename, "tables": tables, "tmpPath": tmp_path}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to inspect SQLite database: {str(e)}")
 

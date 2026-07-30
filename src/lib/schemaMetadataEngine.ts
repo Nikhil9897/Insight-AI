@@ -14,8 +14,7 @@ import { Dataset, ColumnProfile } from '../types';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-export type EntityClass = 'core' | 'transaction' | 'reference' | 'junction' | 'unknown';
-export type Cardinality = '1:1' | '1:∞' | '∞:∞';
+
 
 export interface SchemaColumn {
   name: string;
@@ -35,7 +34,7 @@ export interface SchemaTable {
   columns: SchemaColumn[];
   primaryKeys: string[];
   foreignKeys: { col: string; refTable: string; refCol: string }[];
-  entityClass: EntityClass;
+
   numericCols: SchemaColumn[];
   categoricalCols: SchemaColumn[];
   dateCols: SchemaColumn[];
@@ -48,7 +47,7 @@ export interface SchemaRelationship {
   fromColumn: string;
   toTable: string;
   toColumn: string;
-  cardinality: Cardinality;
+
   label: string;
 }
 
@@ -64,12 +63,11 @@ export interface DatabaseSchema {
   fileSizeBytes?: number;
   tables: SchemaTable[];
   relationships: SchemaRelationship[];
-  healthScore: number;
   healthDetails: HealthDetail[];
-  smartQuestions: string[];
   totalRows: number;
   pkCount: number;
   fkCount: number;
+  smartQuestions?: string[];
 }
 
 export interface RawSchemaColumn {
@@ -135,133 +133,14 @@ function isDateColByName(name: string): boolean {
   );
 }
 
-// ── Entity Classification ──────────────────────────────────────────────────────
-
-function classifyTableEntity(table: SchemaTable, allRelationships: SchemaRelationship[]): EntityClass {
-  const fkCount = table.foreignKeys.length;
-  const hasDates = table.dateCols.length > 0;
-  const hasNumerics = table.numericCols.length > 0;
-
-  const nonFkNonPkCols = table.columns.filter(c => !c.isPrimaryKey && !c.isForeignKey).length;
-  if (fkCount >= 2 && nonFkNonPkCols <= 3 && table.columns.length <= fkCount + 3) {
-    return 'junction';
-  }
-
-  if (fkCount === 0 && table.rowCount <= 200 && table.categoricalCols.length > table.numericCols.length) {
-    return 'reference';
-  }
-
-  if (hasDates && fkCount >= 1 && hasNumerics) {
-    return 'transaction';
-  }
-
-  const referencedByCount = allRelationships.filter(r => r.toTable === table.name).length;
-  if (referencedByCount >= 2 && fkCount <= 1) {
-    return 'core';
-  }
-
-  if (hasDates && fkCount >= 1) {
-    return 'transaction';
-  }
-
-  return 'unknown';
-}
-
-// ── Cardinality Inference ──────────────────────────────────────────────────────
-
-function inferCardinality(
-  fromTable: string,
-  fromColumn: string,
-  toTable: string,
-  toColumn: string,
-  allTables: SchemaTable[],
-): Cardinality {
-  const from = allTables.find(t => t.name === fromTable);
-  const to = allTables.find(t => t.name === toTable);
-  if (!from || !to) return '1:∞';
-  const fromIsPk = from.primaryKeys.includes(fromColumn);
-  const toIsPk = to.primaryKeys.includes(toColumn);
-  if (fromIsPk && toIsPk) return '1:1';
-  if (toIsPk) return '1:∞';
-  return '∞:∞';
-}
-
-// ── Smart Question Generator ───────────────────────────────────────────────────
-
-function generateSmartQuestions(tables: SchemaTable[], relationships: SchemaRelationship[]): string[] {
-  const questions: string[] = [];
-
-  const coreTables = tables.filter(t => t.entityClass === 'core');
-  const transactionTables = tables.filter(t => t.entityClass === 'transaction');
-  const referenceTables = tables.filter(t => t.entityClass === 'reference');
-
-  const bestNumeric = (t: SchemaTable) =>
-    t.numericCols.find(c => !c.isPrimaryKey && !c.isForeignKey) || t.numericCols[0];
-  const bestCategorical = (t: SchemaTable) =>
-    t.categoricalCols.find(c => !c.isPrimaryKey && !c.isForeignKey) || t.categoricalCols[0];
-  const bestDate = (t: SchemaTable) => t.dateCols[0];
-
-  for (const txTable of transactionTables.slice(0, 2)) {
-    const numCol = bestNumeric(txTable);
-    const dateCol = bestDate(txTable);
-    if (numCol) {
-      questions.push(`Show total ${numCol.name} from ${txTable.name}`);
-      questions.push(`What is the average ${numCol.name} across all ${txTable.name}?`);
-    }
-    if (dateCol && numCol) {
-      questions.push(`Monthly trend of ${numCol.name} over time`);
-    }
-    for (const rel of relationships) {
-      if (rel.fromTable === txTable.name) {
-        const parentTable = tables.find(t => t.name === rel.toTable);
-        const parentCat = parentTable ? bestCategorical(parentTable) : null;
-        if (parentTable && numCol && parentCat) {
-          questions.push(`Show total ${numCol.name} by ${parentCat.name}`);
-          questions.push(`Top 10 ${parentTable.name} by total ${numCol.name}`);
-        }
-      }
-    }
-  }
-
-  for (const coreTable of coreTables.slice(0, 2)) {
-    const catCol = bestCategorical(coreTable);
-    const numCol = bestNumeric(coreTable);
-    if (catCol) questions.push(`List all ${coreTable.name} sorted by ${catCol.name}`);
-    if (numCol) questions.push(`Show ${coreTable.name} where ${numCol.name} is below average`);
-  }
-
-  for (const refTable of referenceTables.slice(0, 1)) {
-    const catCol = bestCategorical(refTable);
-    if (catCol) questions.push(`Count records grouped by ${catCol.name}`);
-  }
-
-  const sortedByRows = [...tables].sort((a, b) => b.rowCount - a.rowCount);
-  for (const table of sortedByRows.slice(0, 3)) {
-    const numCol = bestNumeric(table);
-    const catCol = bestCategorical(table);
-    if (numCol && catCol && !questions.some(q => q.includes(table.name))) {
-      questions.push(`Show ${numCol.name} grouped by ${catCol.name} in ${table.name}`);
-    }
-    if (numCol && !questions.some(q => q.includes('Top 10') && q.includes(table.name))) {
-      questions.push(`Top 10 rows in ${table.name} by ${numCol.name}`);
-    }
-  }
-
-  return [...new Set(questions)].slice(0, 10);
-}
-
 // ── Health Score ───────────────────────────────────────────────────────────────
 
-function computeHealthScore(tables: SchemaTable[], relationships: SchemaRelationship[]): {
-  score: number;
-  details: HealthDetail[];
-} {
+function computeDatabaseHealth(tables: SchemaTable[], relationships: SchemaRelationship[]): { details: HealthDetail[] } {
   const details: HealthDetail[] = [];
-  let score = 100;
 
   const tablesWithPk = tables.filter(t => t.primaryKeys.length > 0).length;
   const pkCoverage = tables.length > 0 ? tablesWithPk / tables.length : 1;
-  score -= Math.round((1 - pkCoverage) * 25);
+  
   details.push({
     label: pkCoverage === 1 ? 'Primary Keys Detected' : 'Missing Primary Keys',
     status: pkCoverage === 1 ? 'pass' : pkCoverage >= 0.7 ? 'warn' : 'fail',
@@ -271,7 +150,7 @@ function computeHealthScore(tables: SchemaTable[], relationships: SchemaRelation
   const allTableNames = new Set(tables.map(t => t.name));
   const validFks = relationships.filter(r => allTableNames.has(r.toTable)).length;
   const fkIntegrity = relationships.length > 0 ? validFks / relationships.length : 1;
-  score -= Math.round((1 - fkIntegrity) * 20);
+  
   details.push({
     label: fkIntegrity === 1 ? 'Foreign Key Integrity Valid' : 'FK Reference Issues Detected',
     status: fkIntegrity === 1 ? 'pass' : fkIntegrity >= 0.8 ? 'warn' : 'fail',
@@ -281,7 +160,7 @@ function computeHealthScore(tables: SchemaTable[], relationships: SchemaRelation
   });
 
   const totalNullPct = tables.reduce((sum, t) => sum + t.missingValuePct, 0) / Math.max(tables.length, 1);
-  score -= Math.round(Math.min(totalNullPct * 0.3, 30));
+  
   details.push({
     label: totalNullPct < 5 ? 'Low Missing Value Rate' : 'Missing Values Present',
     status: totalNullPct < 5 ? 'pass' : totalNullPct < 20 ? 'warn' : 'fail',
@@ -293,7 +172,7 @@ function computeHealthScore(tables: SchemaTable[], relationships: SchemaRelation
     ...relationships.map(r => r.toTable),
   ]).size;
   const relCoverage = tables.length > 1 ? connectedTables / tables.length : 1;
-  score -= tables.length > 1 ? Math.round((1 - relCoverage) * 25) : 0;
+  
   details.push({
     label: relCoverage > 0.5 ? 'Relationships Detected' : 'Sparse Relationship Graph',
     status: relCoverage > 0.7 ? 'pass' : relCoverage > 0.3 ? 'warn' : 'fail',
@@ -302,13 +181,70 @@ function computeHealthScore(tables: SchemaTable[], relationships: SchemaRelation
       : 'Single-table dataset — no relationships applicable.',
   });
 
-  return { score: Math.max(0, Math.min(100, Math.round(score))), details };
+  return { details };
 }
 
 // ── Memory Estimate ────────────────────────────────────────────────────────────
 
 function estimateMemoryKB(table: { columns: any[]; rowCount: number }): number {
   return Math.round((table.columns.length * 50 * table.rowCount) / 1024);
+}
+
+export function generateSmartQuestions(tables: SchemaTable[], rels: SchemaRelationship[]): string[] {
+  // Strict rules: Date exists, Measure exists, Join exists
+  let hasDate = false;
+  let hasMeasure = false;
+  let measureColName = '';
+  let measureTableName = '';
+  let dateColName = '';
+  
+  for (const t of tables) {
+    if (t.dateCols.length > 0) {
+      hasDate = true;
+      dateColName = t.dateCols[0].name;
+    }
+    if (t.numericCols.length > 0) {
+      const measure = t.numericCols.find(c => !c.isPrimaryKey && !c.isForeignKey && !c.name.toLowerCase().includes('id'));
+      if (measure) {
+        hasMeasure = true;
+        measureColName = measure.name;
+        measureTableName = t.name;
+      }
+    }
+  }
+
+  const hasJoin = rels.length > 0;
+
+  if (!hasDate || !hasMeasure || !hasJoin) {
+    return [];
+  }
+
+  // Find a categorical column from a different table connected to the measure table
+  let categoryName = '';
+  let categoryTableName = '';
+  const measureTableRels = rels.filter(r => r.fromTable === measureTableName || r.toTable === measureTableName);
+  for (const rel of measureTableRels) {
+    const otherTableName = rel.fromTable === measureTableName ? rel.toTable : rel.fromTable;
+    const otherTable = tables.find(t => t.name === otherTableName);
+    if (otherTable && otherTable.categoricalCols.length > 0) {
+      const catCol = otherTable.categoricalCols.find(c => !c.isPrimaryKey && !c.isForeignKey && !c.name.toLowerCase().includes('id'));
+      if (catCol) {
+        categoryName = catCol.name;
+        categoryTableName = otherTable.name;
+        break;
+      }
+    }
+  }
+
+  const questions: string[] = [];
+  questions.push(`Show total ${measureColName} over time by ${dateColName}`);
+  
+  if (categoryName && categoryTableName) {
+    questions.push(`What is the total ${measureColName} broken down by ${categoryTableName} ${categoryName}?`);
+    questions.push(`Show the top 10 ${categoryTableName} by total ${measureColName}`);
+  }
+
+  return questions;
 }
 
 // ── Heuristic FK Inference ─────────────────────────────────────────────────────
@@ -361,7 +297,7 @@ export function buildSchemaFromBackend(raw: RawSchemaResponse): DatabaseSchema {
       name: t.name, rowCount: t.rowCount,
       columns: t.columns.map(c => ({ ...c, distinctCount: undefined, nullCount: undefined, nullPct: undefined, sampleValues: [] })),
       primaryKeys: t.primaryKeys, foreignKeys: fkDefs,
-      entityClass: 'unknown' as EntityClass,
+      
       numericCols, categoricalCols, dateCols,
       memoryEstimateKB: estimateMemoryKB(t), missingValuePct: 0,
     };
@@ -369,21 +305,20 @@ export function buildSchemaFromBackend(raw: RawSchemaResponse): DatabaseSchema {
 
   const typedRelationships: SchemaRelationship[] = rawRels.map(r => ({
     fromTable: r.fromTable, fromColumn: r.fromColumn, toTable: r.toTable, toColumn: r.toColumn,
-    cardinality: inferCardinality(r.fromTable, r.fromColumn, r.toTable, r.toColumn, partialTables),
+    
     label: `${r.fromTable} → ${r.toTable}`,
   }));
 
-  const typedTables = partialTables.map(t => ({ ...t, entityClass: classifyTableEntity(t, typedRelationships) }));
+  const typedTables = partialTables;
   const totalRows = typedTables.reduce((sum, t) => sum + t.rowCount, 0);
   const pkCount = typedTables.reduce((sum, t) => sum + t.primaryKeys.length, 0);
-  const { score, details } = computeHealthScore(typedTables, typedRelationships);
-  const smartQuestions = generateSmartQuestions(typedTables, typedRelationships);
-
+  const { details } = computeDatabaseHealth(typedTables, typedRelationships);
   return {
     dbName: raw.dbName, dbType: raw.dbType, fileSizeBytes: raw.fileSizeBytes,
     tables: typedTables, relationships: typedRelationships,
-    healthScore: score, healthDetails: details, smartQuestions,
+    healthDetails: details,
     totalRows, pkCount, fkCount: typedRelationships.length,
+    smartQuestions: generateSmartQuestions(typedTables, typedRelationships),
   };
 }
 
@@ -394,7 +329,7 @@ export function buildSchemaFromDatasets(datasets: Dataset[]): DatabaseSchema {
     return {
       dbName: 'Workspace', dbType: 'csv',
       tables: [], relationships: [],
-      healthScore: 0, healthDetails: [], smartQuestions: [],
+      healthDetails: [],
       totalRows: 0, pkCount: 0, fkCount: 0,
     };
   }
@@ -454,7 +389,7 @@ export function buildSchemaFromDatasets(datasets: Dataset[]): DatabaseSchema {
       name: t.name, rowCount: t.rowCount, columns,
       primaryKeys: t.primaryKeys,
       foreignKeys: rawRels.filter(r => r.fromTable === t.name).map(r => ({ col: r.fromColumn, refTable: r.toTable, refCol: r.toColumn })),
-      entityClass: 'unknown' as EntityClass,
+      
       numericCols, categoricalCols, dateCols,
       memoryEstimateKB: estimateMemoryKB(t),
       missingValuePct: totalCells > 0 ? (totalNullCount / totalCells) * 100 : 0,
@@ -463,35 +398,25 @@ export function buildSchemaFromDatasets(datasets: Dataset[]): DatabaseSchema {
 
   const typedRelationships: SchemaRelationship[] = rawRels.map(r => ({
     fromTable: r.fromTable, fromColumn: r.fromColumn, toTable: r.toTable, toColumn: r.toColumn,
-    cardinality: inferCardinality(r.fromTable, r.fromColumn, r.toTable, r.toColumn, partialTables),
+    
     label: `${r.fromTable} → ${r.toTable}`,
   }));
 
-  const typedTables = partialTables.map(t => ({ ...t, entityClass: classifyTableEntity(t, typedRelationships) }));
+  const typedTables = partialTables;
   const totalRows = typedTables.reduce((sum, t) => sum + t.rowCount, 0);
   const pkCount = typedTables.reduce((sum, t) => sum + t.primaryKeys.length, 0);
-  const { score, details } = computeHealthScore(typedTables, typedRelationships);
+  const { details } = computeDatabaseHealth(typedTables, typedRelationships);
 
   return {
     dbName: datasets.length === 1 ? datasets[0].name : 'Multi-table Workspace',
     dbType: 'csv', tables: typedTables, relationships: typedRelationships,
-    healthScore: score, healthDetails: details,
-    smartQuestions: generateSmartQuestions(typedTables, typedRelationships),
+    healthDetails: details,
     totalRows, pkCount, fkCount: typedRelationships.length,
+    smartQuestions: generateSmartQuestions(typedTables, typedRelationships),
   };
 }
 
 // ── Utilities for UI Components ────────────────────────────────────────────────
-
-export function groupTablesByEntity(tables: SchemaTable[]): Record<EntityClass, SchemaTable[]> {
-  return {
-    core: tables.filter(t => t.entityClass === 'core'),
-    transaction: tables.filter(t => t.entityClass === 'transaction'),
-    reference: tables.filter(t => t.entityClass === 'reference'),
-    junction: tables.filter(t => t.entityClass === 'junction'),
-    unknown: tables.filter(t => t.entityClass === 'unknown'),
-  };
-}
 
 export function getTableRelationships(tableName: string, relationships: SchemaRelationship[]) {
   return {
@@ -507,18 +432,7 @@ export function formatFileSize(bytes?: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
-export const ENTITY_CLASS_COLORS: Record<EntityClass, { bg: string; text: string; border: string }> = {
-  core:        { bg: 'bg-blue-50',    text: 'text-blue-700',   border: 'border-blue-200' },
-  transaction: { bg: 'bg-violet-50',  text: 'text-violet-700', border: 'border-violet-200' },
-  reference:   { bg: 'bg-emerald-50', text: 'text-emerald-700',border: 'border-emerald-200' },
-  junction:    { bg: 'bg-amber-50',   text: 'text-amber-700',  border: 'border-amber-200' },
-  unknown:     { bg: 'bg-slate-50',   text: 'text-slate-600',  border: 'border-slate-200' },
-};
 
-export const ENTITY_CLASS_LABELS: Record<EntityClass, string> = {
-  core: 'Core Entity', transaction: 'Transaction',
-  reference: 'Reference', junction: 'Junction', unknown: 'Table',
-};
 
 // ── Join Path Explorer ─────────────────────────────────────────────────────────
 
@@ -597,119 +511,4 @@ export function findJoinPath(
   return { steps: [], tables: [], found: false };
 }
 
-// ── Business Domain Catalog ────────────────────────────────────────────────────
 
-export interface BusinessDomain {
-  /** Domain name — derived from the most-connected core entity name */
-  name: string;
-  /** All tables assigned to this domain */
-  tables: SchemaTable[];
-  /** Color index for visual differentiation */
-  colorIndex: number;
-}
-
-/**
- * Groups tables into semantic business domains using the FK relationship graph.
- *
- * Algorithm (fully schema-driven, no hardcoded domain names):
- * 1. Identify "anchor" tables (core entities that many others reference)
- * 2. Assign each non-anchor table to the anchor it most tightly connects to
- *    (measured by shortest FK hop distance)
- * 3. Name each domain after its anchor table
- * 4. Tables with no FK connections form a standalone domain named after themselves
- */
-export function groupTablesByBusinessDomain(
-  tables: SchemaTable[],
-  relationships: SchemaRelationship[],
-): BusinessDomain[] {
-  if (tables.length === 0) return [];
-
-  // Core entities and well-connected tables are domain anchors
-  const anchors = tables.filter(
-    t => t.entityClass === 'core' || t.entityClass === 'reference'
-  );
-
-  // If no anchors exist, every table becomes its own domain
-  if (anchors.length === 0) {
-    return tables.map((t, i) => ({ name: t.name, tables: [t], colorIndex: i }));
-  }
-
-  // BFS distance from each anchor to all other tables
-  const distanceFrom = new Map<string, Map<string, number>>();
-
-  for (const anchor of anchors) {
-    const dist = new Map<string, number>();
-    dist.set(anchor.name, 0);
-    const queue = [anchor.name];
-
-    while (queue.length > 0) {
-      const current = queue.shift()!;
-      const currentDist = dist.get(current)!;
-      for (const rel of relationships) {
-        const neighbor =
-          rel.fromTable === current ? rel.toTable :
-          rel.toTable === current ? rel.fromTable : null;
-        if (neighbor && !dist.has(neighbor)) {
-          dist.set(neighbor, currentDist + 1);
-          queue.push(neighbor);
-        }
-      }
-    }
-
-    distanceFrom.set(anchor.name, dist);
-  }
-
-  // Assign each table to its closest anchor
-  const domainMap = new Map<string, SchemaTable[]>();
-  for (const anchor of anchors) domainMap.set(anchor.name, [anchor]);
-
-  for (const table of tables) {
-    if (anchors.some(a => a.name === table.name)) continue;
-
-    let bestAnchor = anchors[0].name;
-    let bestDist = Infinity;
-
-    for (const anchor of anchors) {
-      const dist = distanceFrom.get(anchor.name)?.get(table.name) ?? Infinity;
-      if (dist < bestDist) { bestDist = dist; bestAnchor = anchor.name; }
-    }
-
-    if (bestDist === Infinity) {
-      // Isolated table — standalone domain
-      domainMap.set(table.name, [table]);
-    } else {
-      domainMap.get(bestAnchor)!.push(table);
-    }
-  }
-
-  // Sort each domain: anchors first, then transactions, then junctions/unknowns
-  const entityOrder: Record<EntityClass, number> = {
-    core: 0, transaction: 1, reference: 2, junction: 3, unknown: 4,
-  };
-
-  const domains: BusinessDomain[] = [];
-  let colorIdx = 0;
-
-  for (const [anchorName, domainTables] of domainMap.entries()) {
-    if (domainTables.length === 0) continue;
-    const sorted = [...domainTables].sort(
-      (a, b) => entityOrder[a.entityClass] - entityOrder[b.entityClass]
-    );
-    domains.push({ name: anchorName, tables: sorted, colorIndex: colorIdx++ });
-  }
-
-  // Sort domains by size (largest first)
-  return domains.sort((a, b) => b.tables.length - a.tables.length);
-}
-
-/** Color palette for business domains */
-export const DOMAIN_COLOR_PALETTE = [
-  { bg: 'bg-blue-50',   text: 'text-blue-700',   border: 'border-blue-200',   dot: 'bg-blue-500'   },
-  { bg: 'bg-violet-50', text: 'text-violet-700', border: 'border-violet-200', dot: 'bg-violet-500' },
-  { bg: 'bg-emerald-50',text: 'text-emerald-700',border: 'border-emerald-200',dot: 'bg-emerald-500'},
-  { bg: 'bg-amber-50',  text: 'text-amber-700',  border: 'border-amber-200',  dot: 'bg-amber-500'  },
-  { bg: 'bg-rose-50',   text: 'text-rose-700',   border: 'border-rose-200',   dot: 'bg-rose-500'   },
-  { bg: 'bg-cyan-50',   text: 'text-cyan-700',   border: 'border-cyan-200',   dot: 'bg-cyan-500'   },
-  { bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-200', dot: 'bg-indigo-500' },
-  { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200', dot: 'bg-orange-500' },
-];

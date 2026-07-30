@@ -47,7 +47,7 @@ def test_db_connection(
     elif source_type == 'mysql':
         try:
             import pymysql
-            db_port = int(port or 3306)
+            db_port = (port or 3306)
             con = pymysql.connect(
                 host=host or 'localhost',
                 port=db_port,
@@ -75,7 +75,7 @@ def test_db_connection(
     elif source_type == 'postgres':
         try:
             import psycopg2
-            db_port = int(port or 5432)
+            db_port = (port or 5432)
             con = psycopg2.connect(
                 host=host or 'localhost',
                 port=db_port,
@@ -128,7 +128,8 @@ def introspect_schema_details(
         for t in tables:
             try:
                 cur.execute(f"SELECT COUNT(*) FROM \"{t}\"")
-                count = cur.fetchone()[0]
+                row = cur.fetchone()
+                count = row[0] if row else 0
                 df_sample = pd.read_sql_query(f"SELECT * FROM \"{t}\" LIMIT 5", con)
                 cols = list(df_sample.columns)
                 table_metadata.append({
@@ -143,7 +144,7 @@ def introspect_schema_details(
 
     elif source_type == 'mysql':
         import pymysql
-        db_port = int(port or 3306)
+        db_port = (port or 3306)
         con = pymysql.connect(
             host=host or 'localhost',
             port=db_port,
@@ -158,7 +159,8 @@ def introspect_schema_details(
             for t in tables:
                 try:
                     cur.execute(f"SELECT COUNT(*) FROM `{t}`;")
-                    count = cur.fetchone()[0]
+                    row = cur.fetchone()
+                    count = row[0] if row else 0
                     df_sample = pd.read_sql_query(f"SELECT * FROM `{t}` LIMIT 5", con)
                     cols = list(df_sample.columns)
                     table_metadata.append({
@@ -173,7 +175,7 @@ def introspect_schema_details(
 
     elif source_type == 'postgres':
         import psycopg2
-        db_port = int(port or 5432)
+        db_port = (port or 5432)
         con = psycopg2.connect(
             host=host or 'localhost',
             port=db_port,
@@ -188,7 +190,8 @@ def introspect_schema_details(
         for t in tables:
             try:
                 cur.execute(f'SELECT COUNT(*) FROM "{t}";')
-                count = cur.fetchone()[0]
+                row = cur.fetchone()
+                count = row[0] if row else 0
                 df_sample = pd.read_sql_query(f'SELECT * FROM "{t}" LIMIT 5', con)
                 cols = list(df_sample.columns)
                 table_metadata.append({
@@ -230,7 +233,7 @@ def import_table_snapshot_rows(
         import pymysql
         con = pymysql.connect(
             host=host or 'localhost',
-            port=int(port or 3306),
+            port=(port or 3306),
             user=username or 'root',
             password=password or '',
             database=database or ''
@@ -242,7 +245,7 @@ def import_table_snapshot_rows(
         import psycopg2
         con = psycopg2.connect(
             host=host or 'localhost',
-            port=int(port or 5432),
+            port=(port or 5432),
             dbname=database or 'postgres',
             user=username or 'postgres',
             password=password or ''
@@ -255,7 +258,7 @@ def import_table_snapshot_rows(
 
     # Clean NaNs / Infinities / Datetimes
     df = df.replace([float('inf'), float('-inf')], None)
-    df = df.where(pd.notnull(df), None)
+    df = df.astype(object).where(pd.notnull(df), None)
 
     rows = df.to_dict(orient='records')
     clean_rows = []
@@ -314,7 +317,8 @@ def introspect_full_schema(
             # Row count
             try:
                 cur.execute(f'SELECT COUNT(*) FROM "{table}"')
-                row_count = cur.fetchone()[0]
+                row = cur.fetchone()
+                row_count = row[0] if row else 0
             except Exception:
                 row_count = 0
 
@@ -376,7 +380,7 @@ def introspect_full_schema(
             import psycopg2
             con = psycopg2.connect(
                 host=host or "localhost",
-                port=int(port or 5432),
+                port=(port or 5432),
                 dbname=database or "postgres",
                 user=username or "postgres",
                 password=password or "",
@@ -447,7 +451,8 @@ def introspect_full_schema(
             for table in table_names:
                 try:
                     cur.execute(f'SELECT COUNT(*) FROM "{table}"')
-                    row_count = cur.fetchone()[0]
+                    row = cur.fetchone()
+                    row_count = row[0] if row else 0
                 except Exception:
                     row_count = 0
                 cols = cols_by_table.get(table, [])
@@ -468,7 +473,7 @@ def introspect_full_schema(
             import pymysql
             con = pymysql.connect(
                 host=host or "localhost",
-                port=int(port or 3306),
+                port=(port or 3306),
                 user=username or "root",
                 password=password or "",
                 database=database or "",
@@ -528,7 +533,8 @@ def introspect_full_schema(
             for table in table_names:
                 try:
                     cur.execute(f"SELECT COUNT(*) FROM `{table}`")
-                    row_count = cur.fetchone()[0]
+                    row = cur.fetchone()
+                    row_count = row[0] if row else 0
                 except Exception:
                     row_count = 0
                 cols = cols_by_table.get(table, [])
