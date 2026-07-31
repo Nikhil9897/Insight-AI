@@ -50,12 +50,38 @@ function WorkspaceInner() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [datasetSearch, setDatasetSearch] = useState('');
 
+  // Handle clear query history
+  const handleClearHistory = async () => {
+    setHistory([]);
+    if (isGuestMode || !user) {
+      try {
+        const snap = loadGuestWorkspaceSnapshot() || { datasets: [], pinnedCards: [] };
+        const snapshot = { ...snap, history: [], queryHistory: [], savedAt: new Date().toISOString() };
+        localStorage.setItem('insightai_workspace_guest', JSON.stringify(snapshot));
+      } catch (e) {
+        console.warn('Clear guest history error:', e);
+      }
+    } else if (activeProjectId && user) {
+      try {
+        const token = await getIdToken();
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        await fetch(`/api/workspace/projects/${activeProjectId}/query-history`, {
+          method: 'DELETE',
+          headers,
+        });
+      } catch (e) {
+        console.warn('Clear query history error:', e);
+      }
+    }
+  };
+
   // Handle Save Progress (for both Guest localStorage and Real User Cloud)
   const handleSaveProgress = async () => {
     setIsSaving(true);
     setSaveToast(null);
     try {
-      if (isGuestMode || !user) {
+      if (isGuestMode && !user) {
         // Save Guest Progress to local browser storage
         const snapshot = {
           savedAt: new Date().toISOString(),
@@ -78,11 +104,19 @@ function WorkspaceInner() {
           message: 'Guest session progress saved to browser storage',
           type: 'success',
         });
-      } else if (activeProjectId) {
-        // Save Authenticated Real User Progress to Cloud DB
+      } else if (activeProjectId && user) {
+        // Save Authenticated Real User Progress to Cloud DB & User LocalStorage
         const token = await getIdToken();
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };
         if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        const userStorageKey = `insightai_workspace_user_${user.uid}_${activeProjectId}`;
+        localStorage.setItem(userStorageKey, JSON.stringify({
+          savedAt: new Date().toISOString(),
+          datasets: (datasets || []).map((d) => ({ id: d.id, name: d.name, summary: d.summary })),
+          pinnedCards: pinnedItems || [],
+          history: history || [],
+        }));
 
         const res = await fetch(`/api/workspace/projects/${activeProjectId}/save-snapshot`, {
           method: 'POST',
@@ -105,7 +139,7 @@ function WorkspaceInner() {
           const now = new Date();
           setLastSavedAt(now);
           setSaveToast({
-            message: 'Workspace progress saved to cloud',
+            message: 'Workspace progress saved to your account',
             type: 'success',
           });
         } else {
@@ -128,6 +162,10 @@ function WorkspaceInner() {
   useEffect(() => {
     if (isLoading) return;
 
+    // Reset workspace transient state whenever identity changes to prevent state leakage
+    setActiveQueryResult(null);
+    setActiveChatResult(null);
+
     if (user && !isGuestMode) {
       // Authenticated user — clear workspace to empty; project restore effect will populate real saved datasets
       setShowLanding(false);
@@ -135,8 +173,10 @@ function WorkspaceInner() {
       setDatasets([]);
       setActiveDatasetId('');
       setPinnedItems([]);
-    } else if (isGuestMode || !user) {
+      setHistory([]);
+    } else if (isGuestMode && !user) {
       // Guest mode — load guest snapshot from localStorage if exists, else load pristine sampleDatasets
+      setHistory([]);
       const snap = loadGuestWorkspaceSnapshot();
       if (snap && snap.datasets && snap.datasets.length > 0) {
         const restored = snap.datasets
@@ -158,15 +198,17 @@ function WorkspaceInner() {
         setDatasets(sampleDatasets);
         setActiveDatasetId(sampleDatasets[0]?.id || '');
       }
-      if (snap?.pinnedCards) setPinnedItems(snap.pinnedCards);
+      setPinnedItems(snap?.pinnedCards || []);
+      setHistory(snap?.history || (snap as any)?.queryHistory || []);
     } else if (!user && !isGuestMode) {
       setShowLanding(true);
       setAuthModalMode(null);
       setDatasets([]);
       setActiveDatasetId('');
       setPinnedItems([]);
+      setHistory([]);
     }
-  }, [user, isGuestMode, isLoading]);
+  }, [user?.uid, isGuestMode, isLoading]);
 
   // Activate debounced auto-save hook
   useAutoSaveWorkspace(pinnedItems, datasets);
@@ -218,12 +260,11 @@ function WorkspaceInner() {
             setActiveDatasetId('');
           }
 
-          if (data.dashboard?.pinnedCards && data.dashboard.pinnedCards.length > 0) {
-            setPinnedItems(data.dashboard.pinnedCards);
-          }
+          // Always set pinnedItems (or [] if none) for strict user isolation
+          setPinnedItems(data.dashboard?.pinnedCards || []);
 
-          // Restore query history
-          if (data.queryHistory && data.queryHistory.length > 0) {
+          // Always set queryHistory (or [] if none) for strict user isolation
+          if (data.queryHistory) {
             const restored: QueryHistoryItem[] = data.queryHistory.map((h: any) => ({
               id: h.id,
               datasetId: h.datasetId || '',
@@ -237,6 +278,8 @@ function WorkspaceInner() {
               explanation: h.explanation || '',
             }));
             setHistory(restored);
+          } else {
+            setHistory([]);
           }
         }
       } catch (err) {
@@ -244,7 +287,7 @@ function WorkspaceInner() {
       }
     };
     fetchRestored();
-  }, [activeProjectId, user, isGuestMode]);
+  }, [activeProjectId, user?.uid, isGuestMode]);
 
   const safeDatasets = Array.isArray(datasets) ? datasets : [];
   const safePinnedItems = Array.isArray(pinnedItems) ? pinnedItems : [];
@@ -698,19 +741,10 @@ function WorkspaceInner() {
                 alt="Avatar"
                 className="w-8 h-8 rounded-full border border-[#e5e5e5] object-cover shadow-sm"
               />
-              <span className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white ${
-                isGuestMode ? 'bg-amber-400' : 'bg-emerald-500'
-              }`} />
             </div>
             
             {!isSidebarCollapsed && (
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5 mb-0.5">
-                  <span className={`w-1.5 h-1.5 rounded-full ${isGuestMode ? 'bg-amber-400' : 'bg-emerald-500'}`}></span>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider leading-none">
-                    {isGuestMode ? 'Demo Mode' : 'Online'}
-                  </p>
-                </div>
                 <p className="text-xs font-bold text-slate-900 truncate leading-tight">
                   {(() => {
                     // Always prefer the real Firebase user identity over backend profile
@@ -926,6 +960,7 @@ function WorkspaceInner() {
                   <FeatureErrorBoundary featureName="Query History Audit">
                     <QueryHistoryView
                       history={history}
+                      onClearHistory={handleClearHistory}
                       onRerunQuery={(item) => {
                         const ds = datasets.find((d) => d.id === item.datasetId) || activeDataset;
                         setActiveTab('query');

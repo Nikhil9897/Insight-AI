@@ -1,6 +1,6 @@
 import datetime
 import logging
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, cast
 from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
@@ -125,9 +125,9 @@ async def auto_save_workspace(
     if not dashboard:
         dashboard = SavedDashboard(project_id=projectId, user_id=user_id)
         db.add(dashboard)
-    dashboard.pinned_cards_json = pinnedCards
-    dashboard.layout_json = layout
-    dashboard.updated_at = datetime.datetime.utcnow()
+    dashboard.pinned_cards_json = cast(Any, pinnedCards or [])
+    dashboard.layout_json = cast(Any, layout or {})
+    dashboard.updated_at = cast(Any, datetime.datetime.now(datetime.timezone.utc))
     if datasetsMeta:
         for ds in datasetsMeta:
             ds_id = ds.get("id")
@@ -135,12 +135,12 @@ async def auto_save_workspace(
                 continue
             existing_ds = db.query(ImportedDataset).filter(ImportedDataset.project_id == projectId, ImportedDataset.dataset_id == ds_id).first()
             if not existing_ds:
-                existing_ds = ImportedDataset(dataset_id=ds_id, project_id=projectId, dataset_name=ds.get("name", "Dataset"), source_type=ds.get("sourceType", "csv"), row_count=ds.get("summary", {}).get("rowCount", 0), column_count=ds.get("summary", {}).get("columnCount", 0), summary_json=ds.get("summary", {}))
+                existing_ds = ImportedDataset(dataset_id=ds_id, project_id=projectId, dataset_name=ds.get("name", "Dataset"), source_type=ds.get("sourceType", "csv"), row_count=ds.get("summary", {}).get("rowCount", 0), column_count=ds.get("summary", {}).get("columnCount", 0), summary_json=cast(Any, ds.get("summary", {})))
                 db.add(existing_ds)
             else:
                 existing_ds.dataset_name = ds.get("name", existing_ds.dataset_name)
-                existing_ds.summary_json = ds.get("summary", existing_ds.summary_json)
-    project.updated_at = datetime.datetime.utcnow()
+                existing_ds.summary_json = cast(Any, ds.get("summary") or existing_ds.summary_json)
+    project.updated_at = cast(Any, datetime.datetime.now(datetime.timezone.utc))
     try:
         db.commit()
     except IntegrityError:
@@ -184,26 +184,26 @@ async def save_full_snapshot(
                 source_type="sample" if ds.get("isSample") else "csv", 
                 row_count=summary.get("rowCount", len(rows)), 
                 column_count=summary.get("columnCount", 0), 
-                summary_json=summary, 
-                data_rows_json=rows_to_save
+                summary_json=cast(Any, summary), 
+                data_rows_json=cast(Any, rows_to_save)
             )
             db.add(existing_ds)
         else:
             existing_ds.dataset_name = ds.get("name", existing_ds.dataset_name)
             existing_ds.description = ds.get("description", getattr(existing_ds, "description", "") or "")
-            existing_ds.summary_json = summary
-            existing_ds.data_rows_json = rows_to_save
+            existing_ds.summary_json = cast(Any, summary)
+            existing_ds.data_rows_json = cast(Any, rows_to_save)
             existing_ds.row_count = summary.get("rowCount", len(rows))
             existing_ds.column_count = summary.get("columnCount", existing_ds.column_count)
-            existing_ds.updated_at = datetime.datetime.utcnow()
+            existing_ds.updated_at = cast(Any, datetime.datetime.now(datetime.timezone.utc))
         saved_datasets += 1
     if pinnedCards is not None:
         dashboard = db.query(SavedDashboard).filter(SavedDashboard.project_id == projectId).first()
         if not dashboard:
             dashboard = SavedDashboard(project_id=projectId, user_id=user_id)
             db.add(dashboard)
-        dashboard.pinned_cards_json = pinnedCards
-        dashboard.updated_at = datetime.datetime.utcnow()
+        dashboard.pinned_cards_json = cast(Any, pinnedCards or [])
+        dashboard.updated_at = cast(Any, datetime.datetime.now(datetime.timezone.utc))
     existing_ids = {row[0] for row in db.query(QueryHistoryRecord.id).filter(QueryHistoryRecord.project_id == projectId).all()}
     for h in (queryHistory or []):
         h_id = h.get("id")
@@ -212,14 +212,14 @@ async def save_full_snapshot(
         record = QueryHistoryRecord(id=h_id, project_id=projectId, user_id=user_id, dataset_id=h.get("datasetId", ""), dataset_name=h.get("datasetName", ""), user_query=h.get("userQuery", ""), generated_sql=h.get("sql", ""), explanation=h.get("explanation", ""), execution_time_ms=h.get("executionTimeMs", 0), result_row_count=h.get("resultRowCount", 0), status=h.get("status", "success"))
         db.add(record)
         saved_queries += 1
-    project.updated_at = datetime.datetime.utcnow()
+    project.updated_at = cast(Any, datetime.datetime.now(datetime.timezone.utc))
     try:
         db.commit()
     except IntegrityError:
         db.rollback()
         logging.warning("[Snapshot] IntegrityError on commit — skipping duplicate records.")
         db.commit()
-    return {"success": True, "savedAt": datetime.datetime.utcnow().isoformat(), "savedDatasets": saved_datasets, "savedQueries": saved_queries, "message": f"Snapshot saved: {saved_datasets} dataset(s), {saved_queries} query record(s)."}
+    return {"success": True, "savedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(), "savedDatasets": saved_datasets, "savedQueries": saved_queries, "message": f"Snapshot saved: {saved_datasets} dataset(s), {saved_queries} query record(s)."}
 
 
 @router.post("/save-query")
@@ -253,3 +253,24 @@ async def save_query_record(
         db.rollback()
         logging.warning("[SaveQuery] Note: %s", str(e))
         return {"success": True, "note": str(e)}
+
+
+@router.delete("/projects/{projectId}/query-history")
+async def clear_query_history(
+    projectId: str,
+    auth_user: Dict[str, Any] = Depends(verify_firebase_token),
+    db: Session = Depends(get_db)
+):
+    """Clears all query history records for a specific project and authenticated user."""
+    user_id = auth_user["user_id"]
+    project = db.query(Project).filter(Project.id == projectId, Project.user_id == user_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found.")
+    
+    db.query(QueryHistoryRecord).filter(
+        QueryHistoryRecord.project_id == projectId,
+        QueryHistoryRecord.user_id == user_id
+    ).delete()
+    db.commit()
+    return {"success": True, "message": "Query history cleared successfully."}
+

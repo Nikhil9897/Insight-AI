@@ -57,11 +57,6 @@ export const UserProfileMenu: React.FC<UserProfileMenuProps> = ({
             <div className="px-4 py-3 space-y-1">
               <div className="font-extrabold text-slate-900">{displayName}</div>
               <div className="text-[11px] text-slate-500 font-medium truncate">{email}</div>
-              <div className="pt-1">
-                <Badge variant={isGuestMode ? 'amber' : 'emerald'}>
-                  {isGuestMode ? 'Guest Mode' : 'Firebase Authenticated'}
-                </Badge>
-              </div>
             </div>
 
             <div className="py-1">

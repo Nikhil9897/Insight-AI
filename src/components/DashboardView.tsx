@@ -279,10 +279,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">
               {activeDataset ? `${activeDataset.name} Executive Dashboard` : 'Executive Analytics Dashboard'}
             </h1>
-            <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-bold px-2.5 py-0.5 rounded-full flex items-center space-x-1.5 shrink-0">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              <span>FastAPI + DuckDB Connected</span>
-            </span>
           </div>
           <p className="text-xs text-slate-500 font-normal mt-1 max-w-3xl">
             {activeDataset?.description || 'High-level executive briefing and consolidated visual analytics workspace.'}
