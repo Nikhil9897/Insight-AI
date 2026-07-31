@@ -26,6 +26,7 @@ from backend.services.query_planner_service import query_planner_service
 from backend.services.sql_builder_service import sql_builder_service
 from backend.services.intent_parser import intent_parser, QueryIR
 from backend.services.ir_sql_generator import ir_sql_generator
+from backend.nl2sql_engine import NL2SQLEngine
 from backend.config import settings
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
@@ -195,34 +196,42 @@ async def execute_natural_language_query(req: QueryExecutionRequest):
         except Exception as meta_err:
             logger.warning(f"[Analytics] Metadata query failed: {meta_err}, continuing to normal path.")
 
-    # --- CONFIDENCE ROUTER ---
+    # --- PRECISION-FIRST NL2SQL ENGINE ROUTER ---
     t_build_start = time.time()
-    builder_sql, builder_conf, builder_note = sql_builder_service.build_sql(
-        query_plan, all_columns, columns_profile, user_query
+    col_type_map = {c.get('name', ''): c.get('type', 'string') for c in columns_profile} if columns_profile else {}
+    
+    # Process through Modular NL2SQL Engine
+    nl2sql_res = NL2SQLEngine.process(
+        query=user_query,
+        available_columns=all_columns,
+        column_types=col_type_map,
+        df_data=dataset_rows,
+        table_name="df",
+        dialect="duckdb"
     )
     t_build_ms = max(1, int((time.time() - t_build_start) * 1000))
 
-    # PATH A: High Confidence IR Deterministic Path (Sub-5ms)
-    if builder_conf >= 0.75 and not query_plan.is_schema_question:
+    if nl2sql_res.get('is_valid') and nl2sql_res.get('sql'):
         try:
+            engine_sql = nl2sql_res['sql']
             t_duck_start = time.time()
-            res_rows, res_cols = execute_sql_on_data(builder_sql, dataset_rows)
+            res_rows, res_cols = execute_sql_on_data(engine_sql, dataset_rows)
             t_duck_ms = max(1, int((time.time() - t_duck_start) * 1000))
 
-            if res_rows and len(res_rows) > 0:
-                current_sql = builder_sql
+            if res_rows is not None and len(res_rows) > 0:
+                current_sql = engine_sql
                 query_result_rows = res_rows
                 execution_success = True
-                execution_path = "IR Deterministic Pipeline (High-Confidence)"
+                execution_path = "Precision NL2SQL Engine (Fuzzy Grounded & Dry-Run Verified)"
                 agentic_log.append(AgenticAttempt(
                     attemptNumber=1,
                     generatedSql=current_sql,
                     status="success",
-                    reflectionNote=builder_note
+                    reflectionNote="Fuzzy schema grounding & dry-run validation passed cleanly."
                 ))
-                logger.info(f"[Confidence Router] IR confidence={builder_conf:.2f}. SQL executed in {t_duck_ms}ms.")
+                logger.info(f"[NL2SQL Engine] SQL executed in {t_duck_ms}ms with fuzzy grounding.")
         except Exception as build_err:
-            logger.info(f"[Confidence Router] IR SQL failed ({build_err}), falling back to LLM IR Refiner...")
+            logger.info(f"[NL2SQL Engine] Dry-run SQL execution failed ({build_err}), falling back to LLM Recovery...")
 
     # PATH B: Low Confidence / Complex NLP Fallback (LLM Agentic Recovery Loop)
     if not execution_success:

@@ -84,7 +84,14 @@ def recommend_chart(
 
     # Step 2 & 3: Prompt Intent Keywords
     has_time_intent = bool(re.search(r'\b(trend|over time|monthly|daily|yearly|time series|growth|history|by month|by date)\b', query_lower))
+    has_area_intent = bool(re.search(r'\b(area|volume|cumulative|revenue over time|sales volume|profit trend)\b', query_lower))
+    has_stacked_bar_intent = bool(re.search(r'\b(stacked|stacked bar|contribution|region and category|employee and year|sales contribution)\b', query_lower))
+    has_stacked_area_intent = bool(re.search(r'\b(stacked area|market share over time|revenue contribution|growth by segment)\b', query_lower))
     has_pie_intent = bool(re.search(r'\b(percentage|share|proportion|ratio|composition|breakdown of total)\b', query_lower))
+    has_donut_intent = bool(re.search(r'\b(donut|product mix|market share|category distribution|customer segment)\b', query_lower))
+    has_treemap_intent = bool(re.search(r'\b(treemap|hierarchy|hierarchical|nested|product categories|supplier contribution|product hierarchy)\b', query_lower))
+    has_box_plot_intent = bool(re.search(r'\b(box plot|boxplot|spread|variability|outlier|outliers|quartile|percentile|salary analysis|price distribution|freight distribution)\b', query_lower))
+    has_bubble_intent = bool(re.search(r'\b(bubble|price vs quantity|profit vs sales|multi-variable|3-variable|three metrics)\b', query_lower))
     has_top_intent = bool(re.search(r'\b(top|rank|highest|lowest|ranking|best|worst)\b', query_lower))
     has_scatter_intent = bool(re.search(r'\b(relationship|correlation|versus|vs|scatter)\b', query_lower))
     has_hist_intent = bool(re.search(r'\b(distribution|frequency|range|histogram)\b', query_lower))
@@ -95,10 +102,15 @@ def recommend_chart(
         'kpi': 0,
         'line': 0,
         'area': 0,
+        'area_stacked': 0,
         'bar': 0,
         'bar_horizontal': 0,
+        'bar_stacked': 0,
         'pie': 0,
         'donut': 0,
+        'treemap': 0,
+        'box_plot': 0,
+        'bubble': 0,
         'scatter': 0,
         'histogram': 0,
         'heatmap': 0,
@@ -123,40 +135,46 @@ def recommend_chart(
     if row_count == 1 and len(numeric_cols) >= 1 and col_count <= 3:
         scores['kpi'] = 98
 
-    # 3. Line & Area Score (Quality Check: require >=4 data points for smooth line trend)
+    # 3. Line, Area, Stacked Area Score
     if len(date_cols) >= 1 and len(numeric_cols) >= 1:
         if row_count >= 4:
             scores['line'] = 94
             scores['area'] = 88
+            if has_area_intent:
+                scores['area'] = 96
+            if len(categorical_cols) >= 1 or len(numeric_cols) >= 2 or has_stacked_area_intent:
+                scores['area_stacked'] = 92 if has_stacked_area_intent else 84
         elif 2 <= row_count <= 3:
-            scores['line'] = 65  # Quality check: 2-3 points line is suboptimal, favor Bar
+            scores['line'] = 65
             scores['area'] = 55
-        else:  # row_count == 1
+        else:
             scores['line'] = 20
             scores['area'] = 15
 
         if has_time_intent:
             scores['line'] += 6
     else:
-        # Heavy penalty for Line chart if X is CustomerName, Identifier, or Categorical without dates
         scores['line'] = 5
         scores['area'] = 0
+        scores['area_stacked'] = 0
 
-    # 4. Bar Chart & Horizontal Bar Score (Quality Check: >8 categories prefer Horizontal Bar / Table over Vertical Bar)
+    # 4. Bar, Horizontal Bar & Stacked Bar Score
     if len(categorical_cols) >= 1 and len(numeric_cols) >= 1 and row_count >= 2:
         if row_count <= 8:
             scores['bar'] = 90
             scores['bar_horizontal'] = 82
         elif 9 <= row_count <= 15:
-            scores['bar'] = 55  # Quality check: reduce vertical bar score to prevent squished x-labels
+            scores['bar'] = 55
             scores['bar_horizontal'] = 95
-        else:  # row_count > 15
+        else:
             scores['bar'] = 30
             scores['bar_horizontal'] = 92
             scores['table'] += 15
 
         if has_top_intent:
             scores['bar_horizontal'] += 10
+        if has_stacked_bar_intent or (len(categorical_cols) >= 2 or len(numeric_cols) >= 2):
+            scores['bar_stacked'] = 92 if has_stacked_bar_intent else 80
     elif len(columns) >= 2 and len(numeric_cols) >= 1 and row_count >= 2:
         scores['bar'] = 70
         scores['bar_horizontal'] = 75
@@ -165,34 +183,55 @@ def recommend_chart(
         scores['bar'] = max(10, scores['bar'] - 65)
         scores['bar_horizontal'] = max(10, scores['bar_horizontal'] - 65)
 
-    # 5. Pie & Donut Score (Quality Check: strictly limit to <=6 categories, >15 categories = 0)
+    # 5. Pie & Donut Score
     if len(categorical_cols) == 1 and len(numeric_cols) >= 1:
-        if 2 <= row_count <= 6:
+        if 2 <= row_count <= 8:
             scores['pie'] = 82
-            scores['donut'] = 80
-            if has_pie_intent:
-                scores['pie'] += 15
-                scores['donut'] += 15
-        elif 7 <= row_count <= 12:
-            scores['pie'] = 30  # Quality check: slice crowding penalty
+            scores['donut'] = 85
+            if has_pie_intent or has_donut_intent:
+                scores['donut'] = 95 if has_donut_intent else 90
+                scores['pie'] = 90
+        elif 9 <= row_count <= 12:
+            scores['pie'] = 30
             scores['donut'] = 25
-        else:  # row_count > 12 or row_count > 15
-            scores['pie'] = 0  # Quality check: strictly 0 for >12-15 categories
+        else:
+            scores['pie'] = 0
             scores['donut'] = 0
 
     if row_count > 12 or len(date_cols) > 0 or primary_x in identifier_cols:
         scores['pie'] = 0
         scores['donut'] = 0
 
-    # 6. Scatter Plot Score
+    # 6. Treemap Score
+    if len(categorical_cols) >= 1 and len(numeric_cols) >= 1 and row_count >= 3:
+        if has_treemap_intent:
+            scores['treemap'] = 98
+        elif len(categorical_cols) >= 2 or row_count > 10:
+            scores['treemap'] = 82
+    else:
+        scores['treemap'] = 0
+
+    # 7. Box Plot Score
+    if len(numeric_cols) >= 1 and row_count >= 5:
+        if has_box_plot_intent:
+            scores['box_plot'] = 96
+        elif len(categorical_cols) == 0 and len(date_cols) == 0 and has_hist_intent:
+            scores['box_plot'] = 85
+    else:
+        scores['box_plot'] = 0
+
+    # 8. Scatter & Bubble Plot Score
     if len(numeric_cols) >= 2:
         scores['scatter'] = 85
         if has_scatter_intent:
             scores['scatter'] = 98
+        if len(numeric_cols) >= 3 or has_bubble_intent:
+            scores['bubble'] = 96 if has_bubble_intent else 88
     else:
         scores['scatter'] = 0
+        scores['bubble'] = 0
 
-    # 7. Histogram Score
+    # 9. Histogram Score
     if len(numeric_cols) == 1 and len(categorical_cols) == 0 and len(date_cols) == 0 and row_count > 8:
         scores['histogram'] = 80
         if has_hist_intent:
@@ -200,7 +239,7 @@ def recommend_chart(
     else:
         scores['histogram'] = 0
 
-    # 8. Heatmap Score
+    # 10. Heatmap Score
     if len(categorical_cols) >= 2 and len(numeric_cols) >= 1 and row_count >= 4:
         scores['heatmap'] = 88
     else:
@@ -216,18 +255,18 @@ def recommend_chart(
     alternative_charts = [item[0] for item in ranked_tuples[1:4] if item[1] > 20]
 
     # Resolve X & Y Axis Keys for Best Chart
-    if best_chart in ('line', 'area'):
+    if best_chart in ('line', 'area', 'area_stacked'):
         x_key = date_cols[0] if date_cols else primary_x
         y_key = numeric_cols[0] if numeric_cols else primary_y
-    elif best_chart in ('scatter',):
+    elif best_chart in ('scatter', 'bubble'):
         x_key = numeric_cols[0] if numeric_cols else primary_x
         y_key = numeric_cols[1] if len(numeric_cols) > 1 else primary_y
-    elif best_chart in ('bar', 'bar_horizontal', 'pie', 'donut'):
+    elif best_chart in ('bar', 'bar_horizontal', 'bar_stacked', 'pie', 'donut', 'treemap'):
         x_key = categorical_cols[0] if categorical_cols else (columns[0] if columns else 'category')
         y_key = numeric_cols[0] if numeric_cols else (columns[1] if len(columns) > 1 else 'value')
-    elif best_chart == 'histogram':
-        x_key = numeric_cols[0] if numeric_cols else primary_x
-        y_key = 'frequency'
+    elif best_chart in ('box_plot', 'histogram'):
+        x_key = categorical_cols[0] if categorical_cols else (numeric_cols[0] if numeric_cols else primary_x)
+        y_key = numeric_cols[0] if numeric_cols else primary_y
     elif best_chart == 'kpi':
         x_key = columns[0]
         y_key = numeric_cols[0] if numeric_cols else columns[0]

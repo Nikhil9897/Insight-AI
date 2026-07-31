@@ -12,11 +12,13 @@ import {
   Cell,
   XAxis,
   YAxis,
+  ZAxis,
   Tooltip,
   CartesianGrid,
   Legend,
   ScatterChart,
   Scatter,
+  Treemap,
 } from 'recharts';
 import { ChartConfig, ChartType } from '../types';
 import {
@@ -32,6 +34,13 @@ import {
   TrendingUp,
   BarChart2,
   Sparkles,
+  Layers,
+  CircleDot,
+  LayoutGrid,
+  Sliders,
+  Circle,
+  Filter,
+  ChevronDown,
 } from 'lucide-react';
 import { detectCurrency } from '../lib/currencyDetector';
 import { determineOptimalChartType } from '../lib/chartAutoSelector';
@@ -50,44 +59,140 @@ interface SmartChartProps {
   hideControls?: boolean;
 }
 
+export type ChartCategory = 'all' | 'comparison' | 'trends' | 'distribution' | 'correlation' | 'summary';
+
+export interface SelectorItem {
+  type: ChartType;
+  label: string;
+  category: ChartCategory;
+  icon: React.ReactNode;
+  description: string;
+}
+
 const COLOR_PALETTE = [
-  '#3b82f6', // Blue
-  '#06b6d4', // Cyan
-  '#10b981', // Emerald
-  '#f59e0b', // Amber
-  '#8b5cf6', // Violet
-  '#ec4899', // Pink
-  '#6366f1', // Indigo
-  '#14b8a6', // Teal
-  '#f97316', // Orange
-  '#84cc16', // Lime
+  '#2563eb', // Royal Blue
+  '#0d9488', // Teal Accent
+  '#7c3aed', // Deep Violet
+  '#d97706', // Amber Gold
+  '#059669', // Emerald Green
+  '#db2777', // Magenta Pink
+  '#4f46e5', // Indigo
+  '#ea580c', // Coral Orange
+  '#0284c7', // Sky Blue
+  '#65a30d', // Lime
 ];
 
 // Gradient pairs for bar charts [solid, lighter]
 const GRADIENT_PAIRS = [
-  ['#3b82f6', '#93c5fd'],
-  ['#06b6d4', '#67e8f9'],
-  ['#10b981', '#6ee7b7'],
-  ['#f59e0b', '#fcd34d'],
-  ['#8b5cf6', '#c4b5fd'],
-  ['#ec4899', '#f9a8d4'],
-  ['#6366f1', '#a5b4fc'],
-  ['#14b8a6', '#5eead4'],
+  ['#2563eb', '#60a5fa'], // Royal Blue
+  ['#0d9488', '#2dd4bf'], // Teal
+  ['#7c3aed', '#a78bfa'], // Deep Violet
+  ['#d97706', '#fbbf24'], // Amber Gold
+  ['#059669', '#34d399'], // Emerald Green
+  ['#db2777', '#f472b6'], // Magenta Pink
+  ['#4f46e5', '#818cf8'], // Indigo
+  ['#ea580c', '#fb923c'], // Coral
 ];
 
 const TOOLTIP_STYLE = {
-  backgroundColor: '#0d1424',
-  border: '1px solid rgba(255,255,255,0.08)',
+  backgroundColor: 'rgba(15, 23, 42, 0.94)',
+  border: '1px solid rgba(255,255,255,0.12)',
   borderRadius: '12px',
-  color: '#f1f5f9',
+  color: '#f8fafc',
   fontSize: '12px',
   fontFamily: 'Inter, system-ui, sans-serif',
   padding: '10px 14px',
   boxShadow: '0 20px 40px rgba(0,0,0,0.35)',
+  backdropFilter: 'blur(8px)',
 };
 
 const AXIS_STYLE = { stroke: '#94a3b8', fontSize: 11, fontFamily: 'Inter, system-ui, sans-serif' };
 const GRID_STROKE = '#f1f5f9';
+
+const CATEGORIES: { id: ChartCategory; label: string; icon: React.ReactNode }[] = [
+  { id: 'all', label: 'All Charts (17)', icon: <LayoutGrid className="h-3.5 w-3.5 text-blue-600" /> },
+  { id: 'comparison', label: 'Comparison', icon: <BarChart3 className="h-3.5 w-3.5 text-indigo-600" /> },
+  { id: 'trends', label: 'Trends', icon: <TrendingUp className="h-3.5 w-3.5 text-teal-600" /> },
+  { id: 'distribution', label: 'Distribution & Share', icon: <CircleDot className="h-3.5 w-3.5 text-pink-600" /> },
+  { id: 'correlation', label: 'Correlation', icon: <Activity className="h-3.5 w-3.5 text-rose-600" /> },
+  { id: 'summary', label: 'Summary & Table', icon: <Hash className="h-3.5 w-3.5 text-amber-600" /> },
+];
+
+const SELECTOR_ITEMS: SelectorItem[] = [
+  { type: 'bar', label: 'Bar (Vert)', category: 'comparison', icon: <BarChart3 className="h-3.5 w-3.5 text-blue-600" />, description: 'Vertical column comparison' },
+  { type: 'bar_horizontal', label: 'Bar (Hort)', category: 'comparison', icon: <BarChart2 className="h-3.5 w-3.5 rotate-90 text-cyan-600 shrink-0" />, description: 'Horizontal ranked bar comparison' },
+  { type: 'bar_stacked', label: 'Stacked Bar', category: 'comparison', icon: <Layers className="h-3.5 w-3.5 text-indigo-600" />, description: 'Multi-group segment contribution' },
+  
+  { type: 'line', label: 'Line', category: 'trends', icon: <LineChartIcon className="h-3.5 w-3.5 text-blue-600" />, description: 'Sequential time-series trajectory' },
+  { type: 'area', label: 'Area', category: 'trends', icon: <TrendingUp className="h-3.5 w-3.5 text-teal-600" />, description: 'Continuous trend & volume magnitude' },
+  { type: 'area_stacked', label: 'Stacked Area', category: 'trends', icon: <Layers className="h-3.5 w-3.5 text-violet-600" />, description: 'Multi-segment volume over time' },
+  
+  { type: 'pie', label: 'Pie', category: 'distribution', icon: <PieChartIcon className="h-3.5 w-3.5 text-pink-600" />, description: 'Proportional percentage share' },
+  { type: 'donut', label: 'Donut', category: 'distribution', icon: <CircleDot className="h-3.5 w-3.5 text-sky-600" />, description: 'Enterprise hollow distribution pie' },
+  { type: 'treemap', label: 'Treemap', category: 'distribution', icon: <LayoutGrid className="h-3.5 w-3.5 text-emerald-600" />, description: 'Hierarchical space-filling breakdown' },
+  { type: 'histogram', label: 'Hist', category: 'distribution', icon: <BarChart2 className="h-3.5 w-3.5 text-purple-600" />, description: 'Continuous frequency bin distribution' },
+  { type: 'box_plot', label: 'Box Plot', category: 'distribution', icon: <Sliders className="h-3.5 w-3.5 text-amber-600" />, description: 'Quartile spread & outlier detection' },
+  
+  { type: 'scatter', label: 'Scatter', category: 'correlation', icon: <Activity className="h-3.5 w-3.5 text-blue-600" />, description: '2D bivariate correlation plot' },
+  { type: 'bubble', label: 'Bubble', category: 'correlation', icon: <Circle className="h-3.5 w-3.5 text-rose-600" />, description: 'Multi-variable 3D bubble correlation' },
+  { type: 'heatmap', label: 'Heatmap', category: 'correlation', icon: <Flame className="h-3.5 w-3.5 text-orange-600" />, description: '2D cross-tabulation intensity matrix' },
+  
+  { type: 'kpi', label: 'KPI', category: 'summary', icon: <Hash className="h-3.5 w-3.5 text-emerald-600" />, description: 'Single aggregated scalar value card' },
+  { type: 'table', label: 'Table', category: 'summary', icon: <TableIcon className="h-3.5 w-3.5 text-slate-600" />, description: 'Tabular data view' },
+  { type: 'insight_card', label: 'Insight', category: 'summary', icon: <Award className="h-3.5 w-3.5 text-amber-500" />, description: 'AI Summary highlight card' },
+];
+
+// Custom Treemap node content renderer
+const CustomTreemapContent = (props: any) => {
+  const { x, y, width, height, index, name, value } = props;
+  if (!width || !height || width < 24 || height < 18) return null;
+  const color = COLOR_PALETTE[index % COLOR_PALETTE.length];
+  return (
+    <g>
+      <rect
+        x={x}
+        y={y}
+        width={width}
+        height={height}
+        style={{
+          fill: color,
+          stroke: '#ffffff',
+          strokeWidth: 2,
+          rx: 6,
+          ry: 6,
+          opacity: 0.92,
+        }}
+      />
+      {width > 42 && height > 28 && (
+        <text
+          x={x + width / 2}
+          y={y + height / 2 - (height > 45 ? 6 : 0)}
+          textAnchor="middle"
+          dominantBaseline="central"
+          fill="#ffffff"
+          fontSize={11}
+          fontWeight="bold"
+          fontFamily="Inter, sans-serif"
+        >
+          {String(name).length > 12 ? String(name).slice(0, 10) + '…' : name}
+        </text>
+      )}
+      {width > 50 && height > 45 && (
+        <text
+          x={x + width / 2}
+          y={y + height / 2 + 10}
+          textAnchor="middle"
+          dominantBaseline="central"
+          fill="rgba(255,255,255,0.85)"
+          fontSize={10}
+          fontFamily="Inter, sans-serif"
+        >
+          {typeof value === 'number' ? value.toLocaleString() : value}
+        </text>
+      )}
+    </g>
+  );
+};
 
 export const SmartChart: React.FC<SmartChartProps> = ({
   data,
@@ -117,6 +222,7 @@ export const SmartChart: React.FC<SmartChartProps> = ({
   const defaultType: ChartType = initialConfig?.type ? initialConfig.type : autoRecommendation.type;
 
   const [chartType, setChartType] = useState<ChartType>(defaultType);
+  const [selectedCategory, setSelectedCategory] = useState<ChartCategory>('all');
   const [xAxisKey, setXAxisKey] = useState<string>(rawX);
   const [yAxisKey, setYAxisKey] = useState<string>(rawY);
 
@@ -220,7 +326,123 @@ export const SmartChart: React.FC<SmartChartProps> = ({
     return { rowVals, colVals, matrix, maxVal, dim1, dim2, metricCol };
   };
 
-  const isRechartsChart = ['bar', 'bar_horizontal', 'line', 'area', 'pie', 'donut', 'scatter', 'histogram'].includes(chartType);
+  // Helper for Stacked Bar & Stacked Area Multi-Series Pivoting
+  const getPivotedData = () => {
+    const numCols = columns.filter((c) => data.some((r) => typeof r[c] === 'number' && !isNaN(r[c])));
+    const catCols = columns.filter((c) => !numCols.includes(c));
+
+    // If dataset has 2+ numeric columns, stack those metrics directly!
+    if (numCols.length >= 2) {
+      return {
+        pivotedData: data,
+        seriesKeys: numCols.slice(0, 5),
+        primaryXKey: actualXKey,
+      };
+    }
+
+    // If dataset has 2+ categorical columns and 1 numeric column, pivot by catCols[0] (X) and catCols[1] (Group)
+    if (catCols.length >= 2 && numCols.length >= 1) {
+      const xCol = catCols[0];
+      const groupCol = catCols[1];
+      const valCol = numCols[0];
+
+      const groups = Array.from(new Set(data.map((r) => String(r[groupCol] || 'Other')))).slice(0, 5);
+      const rowMap: Record<string, Record<string, any>> = {};
+
+      data.forEach((r) => {
+        const xVal = String(r[xCol] || 'Unknown');
+        const grpVal = String(r[groupCol] || 'Other');
+        const numVal = Number(r[valCol]) || 0;
+
+        if (!rowMap[xVal]) {
+          rowMap[xVal] = { [xCol]: xVal };
+          groups.forEach((g) => (rowMap[xVal][g] = 0));
+        }
+        if (rowMap[xVal][grpVal] !== undefined) {
+          rowMap[xVal][grpVal] += numVal;
+        }
+      });
+
+      return {
+        pivotedData: Object.values(rowMap),
+        seriesKeys: groups,
+        primaryXKey: xCol,
+      };
+    }
+
+    // Fallback: single metric series
+    return {
+      pivotedData: data,
+      seriesKeys: [actualYKey],
+      primaryXKey: actualXKey,
+    };
+  };
+
+  // Helper for Box Plot Stats Calculation
+  const getBoxPlotStats = () => {
+    const numericVals = data
+      .map((r) => Number(r[actualYKey]))
+      .filter((n) => !isNaN(n))
+      .sort((a, b) => a - b);
+
+    if (numericVals.length === 0) {
+      return { min: 0, q1: 0, median: 0, q3: 0, max: 0, iqr: 0, outliers: [], count: 0 };
+    }
+
+    const getPercentile = (arr: number[], p: number) => {
+      const idx = (arr.length - 1) * p;
+      const lower = Math.floor(idx);
+      const upper = Math.ceil(idx);
+      const weight = idx - lower;
+      if (lower === upper) return arr[lower];
+      return arr[lower] * (1 - weight) + arr[upper] * weight;
+    };
+
+    const min = numericVals[0];
+    const max = numericVals[numericVals.length - 1];
+    const q1 = getPercentile(numericVals, 0.25);
+    const median = getPercentile(numericVals, 0.5);
+    const q3 = getPercentile(numericVals, 0.75);
+    const iqr = q3 - q1;
+    const lowerBound = q1 - 1.5 * iqr;
+    const upperBound = q3 + 1.5 * iqr;
+
+    const outliers = numericVals.filter((v) => v < lowerBound || v > upperBound);
+
+    return { min, q1, median, q3, max, iqr, outliers, count: numericVals.length };
+  };
+
+  // Helper for Bubble Chart Multi-Variable Sizing Data Preparation
+  const getBubbleData = () => {
+    const numCols = columns.filter((c) => data.some((r) => typeof r[c] === 'number' && !isNaN(r[c])));
+    const xCol = numCols[0] || actualXKey;
+    const yCol = numCols[1] || actualYKey;
+    const zCol = numCols[2] || numCols[0] || actualYKey;
+
+    const bubblePoints = data.map((r, i) => ({
+      x: Number(r[xCol]) || i + 1,
+      y: Number(r[yCol]) || 0,
+      z: Math.max(10, Math.abs(Number(r[zCol]) || 10)),
+      name: String(r[actualXKey] || `Record ${i + 1}`),
+    }));
+
+    return { bubblePoints, xCol, yCol, zCol };
+  };
+
+  const isRechartsChart = [
+    'bar',
+    'bar_horizontal',
+    'bar_stacked',
+    'line',
+    'area',
+    'area_stacked',
+    'pie',
+    'donut',
+    'scatter',
+    'histogram',
+    'bubble',
+    'treemap',
+  ].includes(chartType);
 
   const renderChartContent = () => {
     switch (chartType) {
@@ -276,7 +498,31 @@ export const SmartChart: React.FC<SmartChartProps> = ({
           </BarChart>
         );
 
-      // 3. Line Chart
+      // 3. Stacked Bar Chart
+      case 'bar_stacked': {
+        const { pivotedData, seriesKeys, primaryXKey } = getPivotedData();
+        return (
+          <BarChart data={pivotedData} margin={{ top: 12, right: 16, left: 0, bottom: 28 }}>
+            <CartesianGrid strokeDasharray="4 4" stroke={GRID_STROKE} vertical={false} />
+            <XAxis dataKey={primaryXKey} {...AXIS_STYLE} tickLine={false} axisLine={false} angle={-18} textAnchor="end" dy={4} />
+            <YAxis {...AXIS_STYLE} tickLine={false} axisLine={false} tickFormatter={formatValue} />
+            <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(value: any, name: any) => [formatTooltip(value), String(name).replace(/_/g, ' ')]} />
+            <Legend verticalAlign="top" height={32} wrapperStyle={{ fontSize: '11px', color: '#64748b' }} />
+            {seriesKeys.map((key, idx) => (
+              <Bar
+                key={key}
+                dataKey={key}
+                stackId="stackedGroup"
+                fill={COLOR_PALETTE[idx % COLOR_PALETTE.length]}
+                radius={idx === seriesKeys.length - 1 ? [6, 6, 0, 0] : [0, 0, 0, 0]}
+                maxBarSize={48}
+              />
+            ))}
+          </BarChart>
+        );
+      }
+
+      // 4. Line Chart
       case 'line':
         return (
           <LineChart data={data} margin={{ top: 12, right: 16, left: 0, bottom: 28 }}>
@@ -295,28 +541,24 @@ export const SmartChart: React.FC<SmartChartProps> = ({
             <Line
               type="monotone"
               dataKey={actualYKey}
-              stroke="#3b82f6"
+              stroke="#2563eb"
               strokeWidth={2.5}
-              dot={{ fill: '#fff', stroke: '#3b82f6', strokeWidth: 2.5, r: 4 }}
-              activeDot={{ r: 7, fill: '#3b82f6', stroke: '#fff', strokeWidth: 2.5, filter: 'url(#lineGlow)' }}
+              dot={{ fill: '#fff', stroke: '#2563eb', strokeWidth: 2.5, r: 4 }}
+              activeDot={{ r: 7, fill: '#2563eb', stroke: '#fff', strokeWidth: 2.5, filter: 'url(#lineGlow)' }}
             />
           </LineChart>
         );
 
-      // Area Chart
+      // 5. Area Chart
       case 'area':
         return (
           <AreaChart data={data} margin={{ top: 12, right: 16, left: 0, bottom: 28 }}>
             <defs>
               <linearGradient id="areaGradMain" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%"  stopColor="#3b82f6" stopOpacity={0.28} />
-                <stop offset="60%" stopColor="#3b82f6" stopOpacity={0.06} />
-                <stop offset="100%" stopColor="#3b82f6" stopOpacity={0} />
+                <stop offset="0%" stopColor="#2563eb" stopOpacity={0.35} />
+                <stop offset="60%" stopColor="#2563eb" stopOpacity={0.08} />
+                <stop offset="100%" stopColor="#2563eb" stopOpacity={0} />
               </linearGradient>
-              <filter id="areaGlow">
-                <feGaussianBlur stdDeviation="2.5" result="blur" />
-                <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-              </filter>
             </defs>
             <CartesianGrid strokeDasharray="4 4" stroke={GRID_STROKE} vertical={false} />
             <XAxis dataKey={actualXKey} {...AXIS_STYLE} tickLine={false} axisLine={false} angle={-18} textAnchor="end" dy={4} />
@@ -327,17 +569,43 @@ export const SmartChart: React.FC<SmartChartProps> = ({
             <Area
               type="monotone"
               dataKey={actualYKey}
-              stroke="#3b82f6"
+              stroke="#2563eb"
               strokeWidth={2.5}
               fillOpacity={1}
               fill="url(#areaGradMain)"
-              dot={{ fill: '#fff', stroke: '#3b82f6', strokeWidth: 2, r: 3.5 }}
-              activeDot={{ r: 6.5, fill: '#3b82f6', stroke: '#fff', strokeWidth: 2 }}
+              dot={{ fill: '#fff', stroke: '#2563eb', strokeWidth: 2, r: 3.5 }}
+              activeDot={{ r: 6.5, fill: '#2563eb', stroke: '#fff', strokeWidth: 2 }}
             />
           </AreaChart>
         );
 
-      // 4. Pie / Donut Chart
+      // 6. Stacked Area Chart
+      case 'area_stacked': {
+        const { pivotedData, seriesKeys, primaryXKey } = getPivotedData();
+        return (
+          <AreaChart data={pivotedData} margin={{ top: 12, right: 16, left: 0, bottom: 28 }}>
+            <CartesianGrid strokeDasharray="4 4" stroke={GRID_STROKE} vertical={false} />
+            <XAxis dataKey={primaryXKey} {...AXIS_STYLE} tickLine={false} axisLine={false} angle={-18} textAnchor="end" dy={4} />
+            <YAxis {...AXIS_STYLE} tickLine={false} axisLine={false} tickFormatter={formatValue} />
+            <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(value: any, name: any) => [formatTooltip(value), String(name).replace(/_/g, ' ')]} />
+            <Legend verticalAlign="top" height={32} wrapperStyle={{ fontSize: '11px', color: '#64748b' }} />
+            {seriesKeys.map((key, idx) => (
+              <Area
+                key={key}
+                type="monotone"
+                dataKey={key}
+                stackId="stackedAreaGroup"
+                stroke={COLOR_PALETTE[idx % COLOR_PALETTE.length]}
+                fill={COLOR_PALETTE[idx % COLOR_PALETTE.length]}
+                fillOpacity={0.4}
+                strokeWidth={2}
+              />
+            ))}
+          </AreaChart>
+        );
+      }
+
+      // 7. Pie & Donut Chart
       case 'pie':
       case 'donut': {
         const isDonut = chartType === 'donut';
@@ -366,7 +634,7 @@ export const SmartChart: React.FC<SmartChartProps> = ({
               paddingAngle={isDonut ? 4 : 2}
               strokeWidth={2}
               stroke="#ffffff"
-              label={({ name, percent }) => `${String(name).slice(0,10)} ${(percent * 100).toFixed(0)}%`}
+              label={({ name, percent }) => `${String(name).slice(0, 10)} ${(percent * 100).toFixed(0)}%`}
               labelLine={{ stroke: '#cbd5e1', strokeWidth: 1 }}
             >
               {data.map((_, index) => (
@@ -377,7 +645,114 @@ export const SmartChart: React.FC<SmartChartProps> = ({
         );
       }
 
-      // 5. Table View
+      // 8. Treemap
+      case 'treemap': {
+        const catCol = columns.find((c) => data.some((r) => typeof r[c] === 'string')) || actualXKey;
+        const numCol = columns.find((c) => data.some((r) => typeof r[c] === 'number')) || actualYKey;
+
+        const treemapData = data.slice(0, 15).map((r, i) => ({
+          name: String(r[catCol] || `Item ${i + 1}`),
+          size: Math.max(1, Math.abs(Number(r[numCol]) || 1)),
+          value: Number(r[numCol]) || 0,
+        }));
+
+        return (
+          <Treemap
+            data={treemapData}
+            dataKey="size"
+            aspectRatio={4 / 3}
+            stroke="#ffffff"
+            content={<CustomTreemapContent />}
+          >
+            <Tooltip
+              contentStyle={TOOLTIP_STYLE}
+              formatter={(value: any, name: any) => [formatTooltip(value), String(name).replace(/_/g, ' ')]}
+            />
+          </Treemap>
+        );
+      }
+
+      // 9. Box Plot
+      case 'box_plot': {
+        const stats = getBoxPlotStats();
+        return (
+          <div className="h-full w-full flex flex-col justify-between p-4 bg-slate-50/60 border border-slate-200 rounded-xl space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+              <div className="flex items-center space-x-2">
+                <Sliders className="h-4 w-4 text-violet-600 shrink-0" />
+                <span className="text-xs font-extrabold text-slate-800 uppercase tracking-wide">
+                  Box Plot Distribution — {actualYKey.replace(/_/g, ' ')}
+                </span>
+              </div>
+              <span className="text-[10px] font-bold text-violet-700 bg-violet-50 border border-violet-200 px-2 py-0.5 rounded-full">
+                n = {stats.count}
+              </span>
+            </div>
+
+            {/* Box & Whisker Visual Graphic */}
+            <div className="relative flex-1 flex items-center justify-center my-2 min-h-[140px] px-6">
+              <div className="w-full max-w-lg relative flex items-center justify-center py-6">
+                {/* Whisker Line */}
+                <div className="w-full h-1 bg-slate-300 rounded-full relative flex items-center">
+                  {/* Min Tick */}
+                  <div className="absolute left-0 top-1/2 -translate-y-1/2 h-8 w-1.5 bg-slate-600 rounded-full" title={`Min: ${formatTooltip(stats.min)}`} />
+                  {/* Max Tick */}
+                  <div className="absolute right-0 top-1/2 -translate-y-1/2 h-8 w-1.5 bg-slate-600 rounded-full" title={`Max: ${formatTooltip(stats.max)}`} />
+
+                  {/* Interquartile Box (Q1 to Q3) */}
+                  <div
+                    className="absolute top-1/2 -translate-y-1/2 h-16 bg-gradient-to-r from-blue-500 via-indigo-600 to-violet-600 border-2 border-blue-700 rounded-xl shadow-md flex items-center justify-center"
+                    style={{ left: '20%', width: '60%' }}
+                  >
+                    {/* Median Line */}
+                    <div className="w-1.5 h-full bg-amber-400 rounded-full shadow-sm" title={`Median: ${formatTooltip(stats.median)}`} />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Statistics Cards */}
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 text-center text-xs">
+              {[
+                { label: 'Min', val: stats.min, color: 'text-slate-700' },
+                { label: 'Q1 (25%)', val: stats.q1, color: 'text-blue-600' },
+                { label: 'Median', val: stats.median, color: 'text-amber-600 font-black' },
+                { label: 'Q3 (75%)', val: stats.q3, color: 'text-blue-600' },
+                { label: 'Max', val: stats.max, color: 'text-slate-700' },
+                { label: 'Outliers', val: stats.outliers.length, color: stats.outliers.length > 0 ? 'text-rose-600 font-bold' : 'text-emerald-600' },
+              ].map((m) => (
+                <div key={m.label} className="bg-white border border-slate-200 rounded-lg p-2 shadow-xs">
+                  <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{m.label}</div>
+                  <div className={`font-mono text-xs font-extrabold mt-0.5 ${m.color}`}>
+                    {typeof m.val === 'number' ? formatValue(m.val) : String(m.val)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      }
+
+      // 10. Bubble Chart
+      case 'bubble': {
+        const { bubblePoints, xCol, yCol, zCol } = getBubbleData();
+        return (
+          <ScatterChart margin={{ top: 10, right: 20, left: 10, bottom: 25 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+            <XAxis type="number" dataKey="x" name={xCol} stroke="#64748b" fontSize={11} tickFormatter={formatValue} />
+            <YAxis type="number" dataKey="y" name={yCol} stroke="#64748b" fontSize={11} tickFormatter={formatValue} />
+            <ZAxis type="number" dataKey="z" range={[120, 1200]} name={zCol} />
+            <Tooltip
+              cursor={{ strokeDasharray: '3 3' }}
+              contentStyle={{ backgroundColor: '#0f172a', borderColor: '#1e293b', borderRadius: '10px', color: '#f8fafc', fontSize: '12px' }}
+              formatter={(value: any, name: any) => [formatTooltip(value), String(name).replace(/_/g, ' ')]}
+            />
+            <Scatter name="Bubble Data" data={bubblePoints} fill="#2563eb" fillOpacity={0.65} stroke="#1d4ed8" strokeWidth={1.5} />
+          </ScatterChart>
+        );
+      }
+
+      // 11. Table View
       case 'table':
         return (
           <div className="h-full w-full overflow-auto border border-slate-200 rounded-xl bg-white shadow-inner">
@@ -406,7 +781,7 @@ export const SmartChart: React.FC<SmartChartProps> = ({
           </div>
         );
 
-      // 6. KPI / Metric Card
+      // 12. KPI / Metric Card
       case 'kpi': {
         const metricVal = data[0][actualYKey] !== undefined ? data[0][actualYKey] : data[0][actualXKey];
         const formattedVal = formatTooltip(metricVal);
@@ -443,7 +818,7 @@ export const SmartChart: React.FC<SmartChartProps> = ({
         );
       }
 
-      // 7. Scatter Plot
+      // 13. Scatter Plot
       case 'scatter': {
         const numCols = columns.filter((c) => data.some((r) => typeof r[c] === 'number'));
         const scatterX = numCols[0] || actualXKey;
@@ -465,19 +840,19 @@ export const SmartChart: React.FC<SmartChartProps> = ({
               contentStyle={{ backgroundColor: '#0f172a', borderColor: '#1e293b', borderRadius: '10px', color: '#f8fafc', fontSize: '12px' }}
               formatter={(value: any, name: any) => [formatTooltip(value), String(name).replace(/_/g, ' ')]}
             />
-            <Scatter name="Data Points" data={scatterData} fill="#3b82f6" />
+            <Scatter name="Data Points" data={scatterData} fill="#2563eb" />
           </ScatterChart>
         );
       }
 
-      // 8. Histogram
+      // 14. Histogram
       case 'histogram': {
         const binData = getHistogramData();
         return (
           <BarChart data={binData} margin={{ top: 12, right: 16, left: 0, bottom: 28 }}>
             <defs>
               <linearGradient id="histGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#8b5cf6" stopOpacity={1} />
+                <stop offset="0%" stopColor="#7c3aed" stopOpacity={1} />
                 <stop offset="100%" stopColor="#c4b5fd" stopOpacity={0.7} />
               </linearGradient>
             </defs>
@@ -492,7 +867,7 @@ export const SmartChart: React.FC<SmartChartProps> = ({
         );
       }
 
-      // 9. Heatmap / Matrix
+      // 15. Heatmap / Matrix
       case 'heatmap': {
         const { rowVals, colVals, matrix, maxVal, dim1, dim2 } = getHeatmapData();
         return (
@@ -526,7 +901,7 @@ export const SmartChart: React.FC<SmartChartProps> = ({
                         return (
                           <td
                             key={c}
-                            style={{ backgroundColor: `rgba(59, 130, 246, ${opacity})` }}
+                            style={{ backgroundColor: `rgba(37, 99, 235, ${opacity})` }}
                             className={`p-2 border border-slate-200 font-mono font-bold ${
                               opacity > 0.5 ? 'text-white' : 'text-slate-900'
                             }`}
@@ -544,7 +919,7 @@ export const SmartChart: React.FC<SmartChartProps> = ({
         );
       }
 
-      // 10. 🏆 Insight Card (AI Summary)
+      // 16. 🏆 Insight Card (AI Summary)
       case 'insight_card': {
         const firstRow = data[0] || {};
         const primaryCatVal = String(firstRow[actualXKey] || firstRow[columns[0]] || 'Top Record');
@@ -598,24 +973,10 @@ export const SmartChart: React.FC<SmartChartProps> = ({
     }
   };
 
-  // Selector toolbar items with explicit labels and icons (including both Vertical & Horizontal Bar options)
-  const SELECTOR_ITEMS: { type: ChartType; label: string; icon: React.ReactNode }[] = [
-    { type: 'bar', label: 'Bar (Vert)', icon: <BarChart3 className="h-3.5 w-3.5" /> },
-    { type: 'bar_horizontal', label: 'Bar (Hort)', icon: <BarChart2 className="h-3.5 w-3.5 rotate-90 shrink-0" /> },
-    { type: 'line', label: 'Line', icon: <LineChartIcon className="h-3.5 w-3.5" /> },
-    { type: 'pie', label: 'Pie', icon: <PieChartIcon className="h-3.5 w-3.5" /> },
-    { type: 'kpi', label: 'KPI', icon: <Hash className="h-3.5 w-3.5" /> },
-    { type: 'table', label: 'Table', icon: <TableIcon className="h-3.5 w-3.5" /> },
-    { type: 'scatter', label: 'Scatter', icon: <Activity className="h-3.5 w-3.5" /> },
-    { type: 'histogram', label: 'Hist', icon: <BarChart2 className="h-3.5 w-3.5" /> },
-    { type: 'heatmap', label: 'Heatmap', icon: <Flame className="h-3.5 w-3.5" /> },
-    { type: 'insight_card', label: 'Insight', icon: <Award className="h-3.5 w-3.5 text-amber-400" /> },
-  ];
-
   return (
     <div className="bg-white border border-[#e5e5e5] rounded-xl shadow-soft-xs overflow-hidden animate-fade-in-up">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between px-5 pt-4 pb-4 border-b border-[#f0f0ef] gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between px-5 pt-4 pb-3 border-b border-[#f0f0ef] gap-2">
         <div className="min-w-0 flex-1">
           <h3 className="text-sm font-semibold text-slate-900 truncate" title={initialConfig?.title}>
             {initialConfig?.title || 'Interactive Visualization'}
@@ -624,15 +985,81 @@ export const SmartChart: React.FC<SmartChartProps> = ({
             <p className="text-xs text-slate-400 mt-0.5 truncate">{initialConfig.description}</p>
           )}
         </div>
+        {headerActions && (
+          <div className="flex items-center gap-2 shrink-0">
+            {headerActions}
+          </div>
+        )}
+      </div>
 
-        <div className="flex items-center gap-2 shrink-0">
-          {/* Dimension selectors */}
-          {!hideControls && (
+      {/* 🌟 Sleek, Uncluttered 1-Line Control Bar */}
+      {!hideControls && (
+        <div className="px-5 py-2.5 bg-[#fcfcfc] border-b border-[#f0f0ef] flex flex-wrap items-center justify-between gap-2.5">
+          {/* Left: Active Chart Dropdown + AI Best Match + Alternatives */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Primary Chart Selector Dropdown */}
+            <div className="relative flex items-center">
+              <select
+                value={chartType}
+                onChange={(e) => setChartType(e.target.value as ChartType)}
+                className="bg-slate-900 text-white font-bold border border-slate-900 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-soft-xs cursor-pointer appearance-none pr-7"
+              >
+                {SELECTOR_ITEMS.map((item) => (
+                  <option key={item.type} value={item.type}>
+                    {item.label} ({item.category.toUpperCase()})
+                  </option>
+                ))}
+              </select>
+              <div className="absolute right-2.5 pointer-events-none text-slate-300">
+                <ChevronDown className="h-3.5 w-3.5" />
+              </div>
+            </div>
+
+            {/* AI Recommendation Badge */}
+            {autoRecommendation.type === chartType && (
+              <span className="flex items-center gap-1 text-[11px] font-extrabold text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-lg shrink-0">
+                <Sparkles className="h-3 w-3 text-blue-600" />
+                <span>AI Best Match</span>
+              </span>
+            )}
+
+            {/* Recommended Alternatives (Pill Badges) */}
+            {autoRecommendation.alternatives && autoRecommendation.alternatives.length > 0 && (
+              <div className="flex items-center gap-1.5 pl-2 border-l border-slate-200">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider shrink-0">Alternatives:</span>
+                <div className="flex flex-wrap items-center gap-1">
+                  {autoRecommendation.alternatives.slice(0, 3).map((alt) => {
+                    const item = SELECTOR_ITEMS.find((s) => s.type === alt.type);
+                    if (!item) return null;
+                    const isSelected = chartType === alt.type;
+                    return (
+                      <button
+                        key={alt.type}
+                        onClick={() => setChartType(alt.type)}
+                        title={alt.reason}
+                        className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold transition-all cursor-pointer border ${
+                          isSelected
+                            ? 'bg-slate-800 text-white border-slate-800'
+                            : 'bg-white text-slate-600 border-slate-200 hover:bg-blue-50 hover:text-blue-700'
+                        }`}
+                      >
+                        {item.icon}
+                        <span>{item.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Right: Axis Selectors + Pin Button */}
+          <div className="flex items-center gap-2 shrink-0">
             <div className="flex items-center gap-1.5">
               <select
                 value={actualXKey}
                 onChange={(e) => setXAxisKey(e.target.value)}
-                className="bg-[#fafafa] text-slate-700 border border-[#e5e5e5] rounded-lg px-2 py-1.5 focus:outline-none text-xs max-w-[110px] truncate cursor-pointer"
+                className="bg-white text-slate-700 font-semibold border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none max-w-[110px] truncate cursor-pointer shadow-2xs"
                 title={`X Axis: ${actualXKey}`}
               >
                 {columns.map((col) => (
@@ -642,7 +1069,7 @@ export const SmartChart: React.FC<SmartChartProps> = ({
               <select
                 value={actualYKey}
                 onChange={(e) => setYAxisKey(e.target.value)}
-                className="bg-[#fafafa] text-slate-700 border border-[#e5e5e5] rounded-lg px-2 py-1.5 focus:outline-none text-xs max-w-[110px] truncate cursor-pointer"
+                className="bg-white text-slate-700 font-semibold border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none max-w-[110px] truncate cursor-pointer shadow-2xs"
                 title={`Y Axis: ${actualYKey}`}
               >
                 {columns.map((col) => (
@@ -650,74 +1077,22 @@ export const SmartChart: React.FC<SmartChartProps> = ({
                 ))}
               </select>
             </div>
-          )}
-          {headerActions}
-          {onPinToDashboard && (
-            <Button
-              variant={isPinned ? 'success' : 'primary'}
-              size="sm"
-              leftIcon={<Pin className="h-3.5 w-3.5" />}
-              onClick={() => onPinToDashboard(initialConfig?.title || 'Chart', currentConfig)}
-            >
-              {isPinned ? 'Pinned' : 'Pin'}
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {/* Chart type selector — compact pill row */}
-      {!hideControls && (
-        <div className="px-5 pb-1 pt-3 flex items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider shrink-0 mr-1">Type:</span>
-          {SELECTOR_ITEMS.map((item) => {
-            const isSelected = chartType === item.type;
-            const isRecommended = autoRecommendation.type === item.type;
-            return (
-              <button
-                key={item.type}
-                onClick={() => setChartType(item.type)}
-                className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-all shrink-0 cursor-pointer border ${
-                  isSelected
-                    ? 'bg-slate-900 text-white border-slate-900'
-                    : 'bg-[#fafafa] text-slate-600 border-[#e5e5e5] hover:bg-slate-100 hover:text-slate-900'
-                }`}
+            {onPinToDashboard && (
+              <Button
+                variant={isPinned ? 'success' : 'primary'}
+                size="sm"
+                leftIcon={<Pin className="h-3.5 w-3.5" />}
+                onClick={() => onPinToDashboard(initialConfig?.title || 'Chart', currentConfig)}
               >
-                {item.icon}
-                <span>{item.label}</span>
-                {isRecommended && !isSelected && (
-                  <span className="text-[9px] text-amber-500">★</span>
-                )}
-              </button>
-            );
-          })}
-
-          {/* Alternative rankings */}
-          {initialConfig?.chartRankings && initialConfig.chartRankings.length > 1 && (
-            <div className="flex items-center gap-1 ml-2 pl-2 border-l border-[#f0f0ef]">
-              <span className="text-[10px] text-slate-400">Also:</span>
-              {initialConfig.chartRankings.slice(1, 3).map((rank) => {
-                const chartKey = rank.chart as ChartType;
-                const item = SELECTOR_ITEMS.find((s) => s.type === chartKey);
-                if (!item) return null;
-                return (
-                  <button
-                    key={chartKey}
-                    onClick={() => setChartType(chartKey)}
-                    title={`Score: ${rank.score}/100`}
-                    className="px-2 py-1 rounded-md border border-[#e5e5e5] text-[11px] text-slate-500 hover:bg-slate-50 flex items-center gap-1 cursor-pointer transition-colors"
-                  >
-                    {item.icon}
-                    <span>{item.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
+                {isPinned ? 'Pinned' : 'Pin'}
+              </Button>
+            )}
+          </div>
         </div>
       )}
 
       {/* Chart canvas — taller for better visual impact */}
-      <div className="h-[340px] w-full px-2 pb-2 pt-1">
+      <div className="h-[350px] w-full px-2 pb-2 pt-1">
         {isRechartsChart ? (
           <ResponsiveContainer width="100%" height="100%">
             {(renderChartContent() ?? <g />) as React.ReactElement}
@@ -735,17 +1110,17 @@ export const SmartChart: React.FC<SmartChartProps> = ({
       <div className="px-5 pb-4 pt-2 border-t border-[#f0f0ef]">
         {insight ? (
           <p className="text-xs text-slate-600 flex items-start gap-2">
-            <Sparkles className="h-3.5 w-3.5 text-blue-400 shrink-0 mt-0.5" />
+            <Sparkles className="h-3.5 w-3.5 text-blue-500 shrink-0 mt-0.5" />
             <span><strong className="text-slate-700">Takeaway:</strong> {insight}</span>
           </p>
         ) : (
-          <p className="text-xs text-slate-400">{autoRecommendation.explanation}</p>
+          <p className="text-xs text-slate-500 font-medium">{autoRecommendation.explanation}</p>
         )}
         <div className="flex items-center justify-between mt-1.5">
           <span className="text-[11px] text-slate-400 font-mono truncate pr-2">
             {queryText ? `> ${queryText}` : `${data.length} records`}
           </span>
-          <span className="text-[10px] text-slate-400 bg-[#f5f5f4] border border-[#ebebeb] px-2 py-0.5 rounded font-sans shrink-0">
+          <span className="text-[10px] text-slate-500 bg-[#f5f5f4] border border-[#ebebeb] px-2 py-0.5 rounded font-bold shrink-0">
             {autoRecommendation.intent}
           </span>
         </div>

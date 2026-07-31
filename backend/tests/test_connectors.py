@@ -2,7 +2,7 @@ import unittest
 import os
 import sqlite3
 import pandas as pd
-from backend.services.db_connector_service import test_db_connection, introspect_schema_details, import_table_snapshot_rows
+from backend.services.db_connector_service import verify_db_connection, introspect_schema_details, import_table_snapshot_rows
 from backend.services.excel_service import parse_excel_workbook
 
 class TestUniversalConnectors(unittest.TestCase):

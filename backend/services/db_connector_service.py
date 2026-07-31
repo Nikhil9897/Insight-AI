@@ -3,13 +3,14 @@ import os
 import pandas as pd
 from typing import List, Dict, Any, Optional
 
-def test_db_connection(
+def verify_db_connection(
     source_type: str,
     host: Optional[str] = None,
     port: Optional[int] = None,
     database: Optional[str] = None,
     username: Optional[str] = None,
     password: Optional[str] = None,
+    sqlite_path: Optional[str] = None,
     sqlite_bytes: Optional[bytes] = None
 ) -> Dict[str, Any]:
     """
@@ -255,10 +256,6 @@ def import_table_snapshot_rows(
 
     if df.empty:
         return []
-
-    # Clean NaNs / Infinities / Datetimes
-    df = df.replace([float('inf'), float('-inf')], None)
-    df = df.astype(object).where(pd.notnull(df), None)
 
     rows = df.to_dict(orient='records')
     clean_rows = []

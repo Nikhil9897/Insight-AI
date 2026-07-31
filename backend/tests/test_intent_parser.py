@@ -1179,8 +1179,8 @@ class TestIRSQLStructure:
 
     def test_ir_chart_is_valid_type(self):
         ir = intent_parser.parse("Revenue by region", RETAIL_COLS, RETAIL_PROFILE)
-        valid_charts = {"kpi", "bar", "bar_horizontal", "line", "area", "scatter", "pie",
-                        "donut", "histogram", "heatmap", "treemap", "table"}
+        valid_charts = {"kpi", "bar", "bar_horizontal", "bar_stacked", "line", "area", "area_stacked",
+                        "scatter", "pie", "donut", "treemap", "box_plot", "bubble", "histogram", "heatmap", "table"}
         assert ir.chart in valid_charts
 
 

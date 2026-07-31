@@ -480,24 +480,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     queryText={item.query || item.chartConfig?.title}
                     hideControls={true}
                     headerActions={
-                      <div className="flex items-center space-x-1 shrink-0">
+                      <div className="flex items-center space-x-1.5 shrink-0">
                         <button
                           onClick={() => {
                             const newWidth = isFullWidth ? 'half' : 'full';
                             // Use a special prefix so App.tsx can detect resize vs remove
                             onRemovePinned(`__RESIZE__${item.id}__${newWidth}`);
                           }}
-                          className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1 rounded-lg border border-slate-200 text-[10px] font-bold transition-colors"
+                          className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1 rounded-lg border border-slate-200 text-[10px] font-bold transition-colors cursor-pointer"
                           title="Toggle Card Width"
                         >
                           {isFullWidth ? 'Half Width' : 'Full Width'}
                         </button>
                         <button
                           onClick={() => onRemovePinned(item.id)}
-                          className="bg-slate-100 hover:bg-rose-50 text-slate-500 hover:text-rose-600 p-1 rounded-lg border border-slate-200 transition-colors"
-                          title="Remove from Dashboard"
+                          className="flex items-center space-x-1 bg-rose-50 hover:bg-rose-100 text-rose-700 px-2.5 py-1 rounded-lg border border-rose-200 text-xs font-bold transition-all shadow-2xs cursor-pointer"
+                          title="Unpin from Executive Dashboard"
                         >
                           <PinOff className="h-3.5 w-3.5" />
+                          <span>Unpin</span>
                         </button>
                       </div>
                     }

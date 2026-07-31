@@ -9,6 +9,7 @@ from backend.routes.auth import router as auth_router
 from backend.routes.connectors import router as connectors_router
 from backend.routes.workspace_persistence import router as workspace_router
 from backend.routes.chat import router as chat_router
+from backend.routes.dataset_intelligence import router as intelligence_router
 from backend.database import Base, engine, run_auto_migrations
 from backend.config import settings
 
@@ -52,6 +53,7 @@ app.include_router(auth_router)
 app.include_router(connectors_router)
 app.include_router(workspace_router)
 app.include_router(chat_router)
+app.include_router(intelligence_router)
 
 
 # Global exception handler — guarantees all unhandled errors return JSON
@@ -60,7 +62,7 @@ async def global_exception_handler(request: Request, exc: Exception):
     logger.error(f"Unhandled exception on {request.url}: {exc}", exc_info=True)
     return JSONResponse(
         status_code=500,
-        content={"detail": str(exc), "error": "Internal server error", "path": str(request.url.path)},
+        content={"detail": str(exc), "error": "Internal server error", "path": request.url.path},
     )
 
 

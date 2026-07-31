@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Body
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel
 from backend.services.db_connector_service import (
-    test_db_connection,
+    verify_db_connection,
     introspect_schema_details,
     import_table_snapshot_rows,
     introspect_full_schema,
@@ -31,7 +31,7 @@ class ImportTableRequest(BaseModel):
 
 @router.post("/test")
 async def api_test_connection(req: ConnectionTestRequest):
-    res = test_db_connection(
+    res = verify_db_connection(
         source_type=req.sourceType,
         host=req.host,
         port=req.port,
@@ -134,7 +134,7 @@ async def api_upload_sqlite(file: UploadFile = File(...)):
 
     contents = await file.read()
     try:
-        conn_res = test_db_connection(source_type='sqlite', sqlite_bytes=contents)
+        conn_res = verify_db_connection(source_type='sqlite', sqlite_bytes=contents)
         if not conn_res.get("success"):
             raise HTTPException(status_code=400, detail=conn_res.get("message"))
 

@@ -1035,13 +1035,25 @@ class IntentParser:
         q: str,
     ) -> str:
         # Explicit intent keywords
+        if re.search(r"\bdonut\b", q):
+            return "donut"
         if re.search(r"\bpie\b", q):
             return "pie"
+        if re.search(r"\bbubble\b", q):
+            return "bubble"
+        if re.search(r"\bbox\s*plot\b|\bboxplot\b|\boutliers?\b|\bquartile\b", q):
+            return "box_plot"
+        if re.search(r"\bstacked\s*area\b", q):
+            return "area_stacked"
+        if re.search(r"\bstacked\s*bar\b|\bstacked\b", q):
+            return "bar_stacked"
+        if re.search(r"\barea\b", q):
+            return "area"
         if re.search(r"\bscatter\b", q):
             return "scatter"
         if re.search(r"\bheatmap\b", q):
             return "heatmap"
-        if re.search(r"\btreemap\b", q):
+        if re.search(r"\btreemap\b|\bhierarchy\b|\bhierarchical\b", q):
             return "treemap"
         if re.search(r"\bhistogram\b", q):
             return "histogram"

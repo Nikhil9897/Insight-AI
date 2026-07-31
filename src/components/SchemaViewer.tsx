@@ -3,8 +3,7 @@ import {
   Database, Table, Key, Hash, Type, Calendar, ToggleLeft, Layers, Search,
   Network, Star, StarOff, ZoomIn, ZoomOut, Maximize2, RotateCcw,
   ArrowRight, Activity, Shield, ChevronDown, ChevronRight, Sparkles,
-  GitBranch, CheckCircle2, AlertCircle, XCircle, Link2,
-  BookOpen, MapPin, Share2, TrendingUp, Cpu, Filter, FolderTree,
+  GitBranch, CheckCircle2, AlertCircle, XCircle, Link2, Cpu,
 } from 'lucide-react';
 import { Dataset, ColumnProfile } from '../types';
 import { Card } from './ui/Card';
@@ -13,7 +12,6 @@ import {
   buildSchemaFromDatasets,
   DatabaseSchema, SchemaTable, SchemaRelationship,
   getTableRelationships, formatFileSize,
-  findJoinPath, JoinPath, JoinPathStep,
 } from '../lib/schemaMetadataEngine';
 
 interface SchemaViewerProps {
@@ -255,19 +253,13 @@ const ErdCanvas: React.FC<ErdCanvasProps> = ({ schema, selectedTable, onSelectTa
 
 // ── Main Component ─────────────────────────────────────────────────────────────
 export const SchemaViewer: React.FC<SchemaViewerProps> = ({ dataset, allDatasets = [], onSelectDataset, onAskQuestion }) => {
-  const [activeTab, setActiveTab] = useState<'schema' | 'erd' | 'catalog'>('schema');
+  const [activeTab, setActiveTab] = useState<'schema' | 'erd'>('schema');
   const [selectedTableName, setSelectedTableName] = useState<string | null>(null);
   const [columnSearch, setColumnSearch] = useState('');
   const [showAllErdCols, setShowAllErdCols] = useState(false);
   const [tableSearch, setTableSearch] = useState('');
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [recentTables, setRecentTables] = useState<string[]>([]);
-
-  // Join Path Explorer state
-  const [joinFrom, setJoinFrom] = useState<string>('');
-  const [joinTo, setJoinTo] = useState<string>('');
-  const [joinPath, setJoinPath] = useState<JoinPath | null>(null);
-  const [joinSearched, setJoinSearched] = useState(false);
 
   const schema: DatabaseSchema = React.useMemo(
     () => buildSchemaFromDatasets(allDatasets.length > 0 ? allDatasets : dataset ? [dataset] : []),
@@ -334,12 +326,7 @@ export const SchemaViewer: React.FC<SchemaViewerProps> = ({ dataset, allDatasets
   const catCount = activeColumns.length - numCount;
 
 
-  const handleFindJoinPath = () => {
-    if (!joinFrom || !joinTo) return;
-    const result = findJoinPath(joinFrom, joinTo, schema.relationships);
-    setJoinPath(result);
-    setJoinSearched(true);
-  };
+
 
   return (
     <div className="space-y-5 animate-fade-in-up">
@@ -363,11 +350,6 @@ export const SchemaViewer: React.FC<SchemaViewerProps> = ({ dataset, allDatasets
           <button onClick={() => setActiveTab('schema')}
             className={`px-4 py-2 text-xs font-bold rounded-xl border transition-all ${activeTab === 'schema' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>
             Schema
-          </button>
-          <button onClick={() => setActiveTab('catalog')}
-            className={`px-4 py-2 text-xs font-bold rounded-xl border transition-all flex items-center gap-1.5 ${activeTab === 'catalog' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>
-            <FolderTree className="h-3.5 w-3.5" />
-            Entity Catalog
           </button>
           <button onClick={() => setActiveTab('erd')}
             className={`px-4 py-2 text-xs font-bold rounded-xl border transition-all flex items-center gap-1.5 ${activeTab === 'erd' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>
@@ -403,198 +385,7 @@ export const SchemaViewer: React.FC<SchemaViewerProps> = ({ dataset, allDatasets
 
 
 
-      {/* ── ENTITY CATALOG TAB ── */}
-      {activeTab === 'catalog' && (
-        <div className="space-y-5 schema-panel-enter">
 
-          {/* Design Philosophy strip */}
-          <div className="bg-gradient-to-r from-slate-900 to-blue-950 text-white rounded-2xl p-5 shadow-soft-sm">
-            <div className="flex items-start gap-3 mb-3">
-              <Cpu className="h-5 w-5 text-blue-400 shrink-0 mt-0.5" />
-              <div>
-                <h2 className="text-sm font-extrabold text-white">Schema Metadata Engine Responsibilities</h2>
-                <p className="text-[11px] text-slate-300 mt-0.5 leading-relaxed">
-                  The Schema Metadata Engine acts as the central intelligence layer between the database and the UI.
-                  It automatically discovers all schema metadata — and all UI components consume this metadata instead
-                  of directly accessing the database. This keeps the architecture modular and allows additional
-                  database connectors to be added without changing the frontend.
-                </p>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">
-              {[
-                { icon: Database, label: 'Schema-driven', desc: 'Generated from detected schema' },
-                { icon: Share2, label: 'Database-agnostic', desc: 'Any relational database' },
-                { icon: BookOpen, label: 'Explainable', desc: 'Understand before querying' },
-                { icon: TrendingUp, label: 'Scalable', desc: 'Small DB to enterprise schemas' },
-              ].map(p => (
-                <div key={p.label} className="bg-white/10 backdrop-blur-sm rounded-xl p-2.5 border border-white/10">
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <p.icon className="h-3.5 w-3.5 text-blue-300 shrink-0" />
-                    <span className="text-[10px] font-extrabold text-white uppercase tracking-wide">{p.label}</span>
-                  </div>
-                  <p className="text-[9px] text-slate-400 leading-relaxed">{p.desc}</p>
-                </div>
-              ))}
-            </div>
-            <div className="mt-3 pt-3 border-t border-white/10">
-              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Automatically Discovers</div>
-              <div className="flex flex-wrap gap-1.5">
-                {['Tables', 'Columns', 'Data Types', 'Primary Keys', 'Foreign Keys', 'Relationship Graph', 'Entity Categories', 'Cardinality', 'Business Metrics', 'Health Statistics', 'Suggested Questions'].map(tag => (
-                  <span key={tag} className="text-[9px] bg-blue-900/60 text-blue-300 border border-blue-700/50 px-2 py-0.5 rounded-full font-semibold">{tag}</span>
-                ))}
-              </div>
-            </div>
-          </div>
-
-
-          {/* Join Path Explorer */}
-          {schema.tables.length > 1 && (
-            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-soft-xs">
-              <div className="flex items-center gap-2 border-b border-slate-100 pb-3 mb-4">
-                <MapPin className="h-4 w-4 text-blue-600" />
-                <h2 className="text-sm font-bold text-slate-900">Join Path Explorer</h2>
-                <span className="text-[10px] text-slate-400 font-medium">Find the shortest FK join path between any two tables</span>
-              </div>
-
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-3 mb-4">
-                <div className="flex-1">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">From Table</label>
-                  <select
-                    value={joinFrom}
-                    onChange={e => { setJoinFrom(e.target.value); setJoinSearched(false); setJoinPath(null); }}
-                    className="w-full bg-slate-50 text-xs px-3 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:border-blue-500 focus:bg-white transition-all font-semibold text-slate-800"
-                  >
-                    <option value="">Select source table…</option>
-                    {schema.tables.map(t => <option key={t.name} value={t.name}>{t.name}</option>)}
-                  </select>
-                </div>
-                <div className="flex items-center justify-center sm:pb-2">
-                  <div className="flex items-center gap-1.5 text-slate-400">
-                    <div className="h-px w-6 bg-slate-300" />
-                    <ArrowRight className="h-4 w-4" />
-                    <div className="h-px w-6 bg-slate-300" />
-                  </div>
-                </div>
-                <div className="flex-1">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">To Table</label>
-                  <select
-                    value={joinTo}
-                    onChange={e => { setJoinTo(e.target.value); setJoinSearched(false); setJoinPath(null); }}
-                    className="w-full bg-slate-50 text-xs px-3 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:border-blue-500 focus:bg-white transition-all font-semibold text-slate-800"
-                  >
-                    <option value="">Select target table…</option>
-                    {schema.tables.filter(t => t.name !== joinFrom).map(t => <option key={t.name} value={t.name}>{t.name}</option>)}
-                  </select>
-                </div>
-                <button
-                  onClick={handleFindJoinPath}
-                  disabled={!joinFrom || !joinTo}
-                  className="px-5 py-2.5 bg-blue-600 text-white text-xs font-bold rounded-xl disabled:opacity-40 disabled:cursor-not-allowed hover:bg-blue-700 transition-all shadow-soft-xs active:scale-95 shrink-0"
-                >
-                  Find Path
-                </button>
-              </div>
-
-              {/* Result */}
-              {joinSearched && joinPath && (
-                <div className={`rounded-xl border p-4 ${joinPath.found ? 'bg-emerald-50 border-emerald-200' : 'bg-rose-50 border-rose-200'}`}>
-                  {!joinPath.found ? (
-                    <div className="flex items-center gap-2 text-sm text-rose-600 font-semibold">
-                      <XCircle className="h-4 w-4 shrink-0" />
-                      No join path found between <strong>{joinFrom}</strong> and <strong>{joinTo}</strong>. They may be in disconnected subgraphs.
-                    </div>
-                  ) : joinPath.steps.length === 0 ? (
-                    <div className="flex items-center gap-2 text-sm text-emerald-700 font-semibold">
-                      <CheckCircle2 className="h-4 w-4 shrink-0" />
-                      Same table selected — no join required.
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      <div className="flex items-center gap-2">
-                        <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
-                        <span className="text-xs font-bold text-emerald-800">
-                          Path found — {joinPath.steps.length} join{joinPath.steps.length > 1 ? 's' : ''} required
-                        </span>
-                      </div>
-
-                      {/* Visual chain */}
-                      <div className="flex items-start gap-0 overflow-x-auto pb-2">
-                        {joinPath.tables.map((tbl, i) => (
-                          <React.Fragment key={tbl + i}>
-                            <div className="flex flex-col items-center shrink-0">
-                              <div className="bg-white border-2 border-blue-400 rounded-xl px-3 py-2 shadow-soft-xs min-w-[100px]">
-                                <div className="flex items-center gap-1.5 mb-1">
-                                  <Table className="h-3 w-3 text-blue-600 shrink-0" />
-                                  <span className="text-[11px] font-extrabold text-slate-900">{tbl}</span>
-                                </div>
-                                {i < joinPath.steps.length && (
-                                  <div className="text-[9px] font-mono text-blue-600 bg-blue-50 rounded px-1 py-0.5">
-                                    {joinPath.steps[i].fromColumn}
-                                  </div>
-                                )}
-                                {i > 0 && i <= joinPath.steps.length && (
-                                  <div className="text-[9px] font-mono text-violet-600 bg-violet-50 rounded px-1 py-0.5 mt-0.5">
-                                    {joinPath.steps[i - 1].toColumn}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                            {i < joinPath.tables.length - 1 && (
-                              <div className="flex items-center pt-4 shrink-0">
-                                <div className="h-px w-4 bg-slate-300" />
-                                <ArrowRight className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                                <div className="h-px w-4 bg-slate-300" />
-                              </div>
-                            )}
-                          </React.Fragment>
-                        ))}
-                      </div>
-
-                      {/* Step-by-step join pairs */}
-                      <div>
-                        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Join Conditions</div>
-                        <div className="space-y-1.5">
-                          {joinPath.steps.map((step, i) => (
-                            <div key={i} className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 border border-slate-100 text-[11px] font-mono">
-                              <span className="text-blue-700 font-bold">{step.fromTable}</span>
-                              <span className="text-slate-400">.</span>
-                              <span className="text-blue-900 font-extrabold">{step.fromColumn}</span>
-                              <span className="text-slate-400 mx-1">=</span>
-                              <span className="text-violet-700 font-bold">{step.toTable}</span>
-                              <span className="text-slate-400">.</span>
-                              <span className="text-violet-900 font-extrabold">{step.toColumn}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Auto-generated SQL hint */}
-                      {onAskQuestion && (
-                        <button
-                          onClick={() => onAskQuestion(`Join ${joinFrom} to ${joinTo} through ${joinPath.tables.slice(1, -1).join(', ') || 'direct FK'}`)}
-                          className="flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors"
-                        >
-                          <Sparkles className="h-3.5 w-3.5" />
-                          Ask AI to write this join query →
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {!joinSearched && (
-                <div className="text-center py-6 text-slate-400 text-xs">
-                  Select two tables above to find the shortest FK join path between them.
-                  <br />
-                  <span className="text-[10px] text-slate-300">Uses BFS over the relationship graph — works for any database schema.</span>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* ── ER DIAGRAM TAB ── */}
       {activeTab === 'erd' && (

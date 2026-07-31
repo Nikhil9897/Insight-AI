@@ -19,6 +19,7 @@ export interface ChartRecommendation {
 /**
  * Intelligent Automatic Chart Selection Engine
  * Selects optimal visualization based on data shape, cardinality, column types, and query intent.
+ * Supports 7 Enterprise Chart Types: Area, Stacked Bar, Stacked Area, Donut, Treemap, Box Plot, Bubble.
  */
 export function determineOptimalChartType(
   data: Record<string, any>[],
@@ -94,7 +95,132 @@ export function determineOptimalChartType(
     };
   }
 
-  // Rule 3: Time Series (Date column present or time trend requested) -> Line Chart
+  // Rule 3: Box Plot (Distribution, spread, salary, price distribution, freight, outliers)
+  if (
+    titleLower.includes('box plot') ||
+    titleLower.includes('boxplot') ||
+    titleLower.includes('outlier') ||
+    titleLower.includes('spread') ||
+    titleLower.includes('variability') ||
+    titleLower.includes('quartile') ||
+    titleLower.includes('salary analysis') ||
+    titleLower.includes('price distribution') ||
+    titleLower.includes('freight distribution')
+  ) {
+    const yKey = numCols[0] || columns[1] || columns[0];
+    const xKey = catCols[0] || columns[0];
+    return {
+      type: 'box_plot',
+      label: 'Box Plot',
+      xAxisKey: xKey,
+      yAxisKey: yKey,
+      intent: 'Statistical Metric Spread & Outlier Detection',
+      explanation: `Box Plot selected because query evaluates continuous metric variability, quartile distribution, and outlier detection for '${yKey}'.`,
+      alternatives: [
+        { type: 'histogram', label: 'Frequency Histogram', reason: 'Fallback to frequency binning' },
+        { type: 'bar', label: 'Bar Chart', reason: 'Compare aggregated mean or median per group' },
+        { type: 'table', label: 'Data Table', reason: 'Raw metric distribution values' },
+      ],
+    };
+  }
+
+  // Rule 4: Bubble Chart (3 numeric columns or multi-variable correlation prompt)
+  if (
+    numCols.length >= 3 ||
+    titleLower.includes('bubble') ||
+    titleLower.includes('price vs quantity') ||
+    titleLower.includes('profit vs sales vs discount') ||
+    (numCols.length >= 2 && titleLower.includes('3-variable'))
+  ) {
+    const xKey = numCols[0] || columns[0];
+    const yKey = numCols[1] || columns[1] || columns[0];
+    const zKey = numCols[2] || numCols[0];
+    return {
+      type: 'bubble',
+      label: 'Bubble Chart',
+      xAxisKey: xKey,
+      yAxisKey: yKey,
+      intent: 'Multi-Variable Correlation (X, Y, Size)',
+      explanation: `Bubble Chart selected because multi-variable correlation across three numeric metrics ('${xKey}', '${yKey}', and '${zKey}') was detected.`,
+      alternatives: [
+        { type: 'scatter', label: 'Scatter Plot', reason: 'Fallback to 2D scatter plot without bubble sizing' },
+        { type: 'line', label: 'Line Chart', reason: 'Sequential trend view' },
+        { type: 'table', label: 'Data Table', reason: 'Tabular view of all variables' },
+      ],
+    };
+  }
+
+  // Rule 5: Treemap (Hierarchical categories, nested entities, supplier contribution, treemap keyword)
+  if (
+    titleLower.includes('treemap') ||
+    titleLower.includes('hierarchy') ||
+    titleLower.includes('hierarchical') ||
+    titleLower.includes('product hierarchy') ||
+    titleLower.includes('supplier contribution') ||
+    (catCols.length >= 2 && (titleLower.includes('nested') || titleLower.includes('by category and subcategory') || rowCount > 12))
+  ) {
+    const xKey = catCols[0] || columns[0];
+    const yKey = numCols[0] || columns[1] || columns[0];
+    return {
+      type: 'treemap',
+      label: 'Treemap',
+      xAxisKey: xKey,
+      yAxisKey: yKey,
+      intent: 'Hierarchical Categorical Composition',
+      explanation: `Treemap selected because the query compares hierarchical product categories.`,
+      alternatives: [
+        { type: 'bar', label: 'Bar Chart', reason: 'Fallback to standard categorical comparison' },
+        { type: 'bar_horizontal', label: 'Horizontal Bar', reason: 'Ranked bar layout' },
+        { type: 'table', label: 'Data Table', reason: 'Exact numbers per hierarchical node' },
+      ],
+    };
+  }
+
+  // Rule 6: Stacked Area Chart (Time-series with multiple categories or cumulative composition over time)
+  if (
+    (dateCol || titleLower.includes('trend') || titleLower.includes('over time')) &&
+    (titleLower.includes('stacked area') || titleLower.includes('market share over time') || titleLower.includes('revenue contribution') || titleLower.includes('growth by segment') || numCols.length >= 2)
+  ) {
+    const xKey = dateCol || catCols[0] || columns[0];
+    const yKey = numCols[0] || columns[1] || columns[0];
+    return {
+      type: 'area_stacked',
+      label: 'Stacked Area Chart',
+      xAxisKey: xKey,
+      yAxisKey: yKey,
+      intent: 'Multi-Segment Cumulative Volume over Time',
+      explanation: `Stacked Area Chart selected because time-series with multi-segment category composition detected ('${xKey}').`,
+      alternatives: [
+        { type: 'area', label: 'Area Chart', reason: 'Fallback to single series area chart' },
+        { type: 'line', label: 'Line Chart', reason: 'Individual trend lines' },
+        { type: 'bar_stacked', label: 'Stacked Bar Chart', reason: 'Discrete stacked period totals' },
+      ],
+    };
+  }
+
+  // Rule 7: Area Chart (Revenue over time, monthly sales, profit trends, continuous time-series)
+  if (
+    (dateCol || titleLower.includes('over time') || titleLower.includes('monthly') || titleLower.includes('daily')) &&
+    (titleLower.includes('area') || titleLower.includes('revenue over time') || titleLower.includes('sales volume') || titleLower.includes('profit trend') || titleLower.includes('volume'))
+  ) {
+    const xKey = dateCol || catCols[0] || columns[0];
+    const yKey = numCols[0] || columns[1] || columns[0];
+    return {
+      type: 'area',
+      label: 'Area Chart',
+      xAxisKey: xKey,
+      yAxisKey: yKey,
+      intent: 'Continuous Volume & Trajectory Analysis',
+      explanation: `Area Chart selected because continuous time dimension detected ('${xKey}') with focus on cumulative volume magnitude over time.`,
+      alternatives: [
+        { type: 'line', label: 'Line Chart', reason: 'Standard continuous line view' },
+        { type: 'bar', label: 'Bar Chart', reason: 'Discrete period comparison' },
+        { type: 'table', label: 'Data Table', reason: 'Dated tabular rows' },
+      ],
+    };
+  }
+
+  // Rule 8: Standard Line Chart (Time Series)
   if (dateCol || titleLower.includes('trend') || titleLower.includes('over time') || titleLower.includes('monthly') || titleLower.includes('daily')) {
     const xKey = dateCol || catCols[0] || columns[0];
     const yKey = numCols[0] || columns[1] || columns[0];
@@ -106,18 +232,66 @@ export function determineOptimalChartType(
       intent: 'Time-Series & Trajectory Analysis',
       explanation: `Sequential time dimension detected ('${xKey}'). A Line Chart is best suited to reveal growth trajectory over time.`,
       alternatives: [
-        { type: 'bar', label: 'Bar Chart', reason: 'Best for comparing discrete period totals side-by-side' },
         { type: 'area', label: 'Area Chart', reason: 'Emphasizes cumulative volume beneath trend curve' },
+        { type: 'bar', label: 'Bar Chart', reason: 'Best for comparing discrete period totals side-by-side' },
         { type: 'table', label: 'Data Table', reason: 'Exact dated numeric rows' },
       ],
     };
   }
 
-  // Rule 4: Two Categorical Dimensions + 1 Numeric Column -> Heatmap / Matrix
+  // Rule 9: Stacked Bar Chart (Category + Group / Region + Category / Employee + Year)
+  if (
+    titleLower.includes('stacked') ||
+    titleLower.includes('revenue by region and category') ||
+    titleLower.includes('orders by employee and year') ||
+    titleLower.includes('sales contribution') ||
+    (catCols.length >= 2 && (titleLower.includes('contribution') || titleLower.includes('by region') || titleLower.includes('by category')))
+  ) {
+    const xKey = catCols[0] || columns[0];
+    const yKey = numCols[0] || columns[1] || columns[0];
+    return {
+      type: 'bar_stacked',
+      label: 'Stacked Bar Chart',
+      xAxisKey: xKey,
+      yAxisKey: yKey,
+      intent: 'Multi-Group Segment Contribution',
+      explanation: `Stacked Bar Chart selected because query compares multi-group categorical breakdown ('${xKey}' by category).`,
+      alternatives: [
+        { type: 'bar', label: 'Bar Chart', reason: 'Fallback to standard bar chart' },
+        { type: 'heatmap', label: 'Heatmap Matrix', reason: 'Matrix intensity view' },
+        { type: 'table', label: 'Data Table', reason: 'Grouped breakdown rows' },
+      ],
+    };
+  }
+
+  // Rule 10: Donut Chart (Category distribution, market share, customer segments, product mix, <=8 categories)
+  if (
+    rowCount >= 2 &&
+    rowCount <= 8 &&
+    (titleLower.includes('donut') || titleLower.includes('product mix') || titleLower.includes('market share') || titleLower.includes('category distribution') || titleLower.includes('customer segment') || titleLower.includes('proportion'))
+  ) {
+    const xKey = catCols[0] || columns[0];
+    const yKey = numCols[0] || columns[1] || columns[0];
+    return {
+      type: 'donut',
+      label: 'Donut Chart',
+      xAxisKey: xKey,
+      yAxisKey: yKey,
+      intent: 'Category Share & Donut Distribution',
+      explanation: `Donut Chart selected because query compares percentage distribution across ${rowCount} discrete categories.`,
+      alternatives: [
+        { type: 'pie', label: 'Pie Chart', reason: 'Fallback to standard pie layout' },
+        { type: 'bar', label: 'Bar Chart', reason: 'Compare exact numerical magnitudes' },
+        { type: 'table', label: 'Data Table', reason: 'Precise share calculations' },
+      ],
+    };
+  }
+
+  // Rule 11: Two Categorical Dimensions + 1 Numeric Column -> Heatmap / Matrix
   if (
     catCols.length >= 2 &&
     numCols.length >= 1 &&
-    (titleLower.includes('matrix') || titleLower.includes('heatmap') || titleLower.includes('by region and category') || titleLower.includes('cross'))
+    (titleLower.includes('matrix') || titleLower.includes('heatmap') || titleLower.includes('cross'))
   ) {
     return {
       type: 'heatmap',
@@ -133,7 +307,7 @@ export function determineOptimalChartType(
     };
   }
 
-  // Rule 5: Two Numeric Columns -> Scatter Plot
+  // Rule 12: Two Numeric Columns -> Scatter Plot
   if (
     numCols.length >= 2 &&
     (titleLower.includes('vs') || titleLower.includes('scatter') || titleLower.includes('correlation') || titleLower.includes('relationship'))
@@ -152,7 +326,7 @@ export function determineOptimalChartType(
     };
   }
 
-  // Rule 6: Single Numeric Column Distribution -> Histogram
+  // Rule 13: Single Numeric Column Distribution -> Histogram
   if (numCols.length === 1 && catCols.length === 0 && rowCount > 5) {
     return {
       type: 'histogram',
@@ -162,35 +336,37 @@ export function determineOptimalChartType(
       intent: 'Frequency Distribution',
       explanation: `Continuous numerical values detected across attribute '${numCols[0]}'. Frequency Histogram bins range intervals cleanly.`,
       alternatives: [
+        { type: 'box_plot', label: 'Box Plot', reason: 'Quartile distribution and outlier detection' },
         { type: 'bar', label: 'Bar Chart', reason: 'Discrete range frequency comparison' },
         { type: 'table', label: 'Data Table', reason: 'Raw frequency values' },
       ],
     };
   }
 
-  // Rule 7: Percentage / Share / Part-of-whole -> Pie / Donut
+  // Rule 14: Percentage / Share / Part-of-whole -> Pie / Donut
   if (
     rowCount >= 2 &&
     rowCount <= 6 &&
-    (titleLower.includes('share') || titleLower.includes('percentage') || titleLower.includes('split') || titleLower.includes('distribution') || titleLower.includes('proportion') || titleLower.includes('pie'))
+    (titleLower.includes('share') || titleLower.includes('percentage') || titleLower.includes('split') || titleLower.includes('distribution') || titleLower.includes('pie'))
   ) {
     const xKey = catCols[0] || columns[0];
     const yKey = numCols[0] || columns[1] || columns[0];
     return {
       type: 'pie',
-      label: 'Pie / Donut Chart',
+      label: 'Pie Chart',
       xAxisKey: xKey,
       yAxisKey: yKey,
       intent: 'Proportional Composition & Percentage Breakdown',
-      explanation: `Proportional breakdown across ${rowCount} categories. Pie / Donut Chart best illustrates percentage market share.`,
+      explanation: `Proportional breakdown across ${rowCount} categories. Pie Chart best illustrates percentage market share.`,
       alternatives: [
+        { type: 'donut', label: 'Donut Chart', reason: 'Hollow center distribution view' },
         { type: 'bar', label: 'Bar Chart', reason: 'Compare exact numerical magnitudes' },
         { type: 'table', label: 'Data Table', reason: 'Precise share calculations' },
       ],
     };
   }
 
-  // Rule 8: Categorical Comparisons
+  // Rule 15: Categorical Comparisons
   const xKey = catCols[0] || columns[0];
   const yKey = numCols[0] || columns[1] || columns[0];
 
@@ -205,6 +381,7 @@ export function determineOptimalChartType(
       explanation: `Query returned ${rowCount} categories (> 10). Horizontal Bar Chart ensures category labels remain legible without truncation.`,
       alternatives: [
         { type: 'bar', label: 'Vertical Bar', reason: 'Standard vertical comparison' },
+        { type: 'treemap', label: 'Treemap', reason: 'Hierarchical space-filling breakdown' },
         { type: 'table', label: 'Sorted Table', reason: 'Ranked tabular list with pagination' },
       ],
     };
@@ -220,7 +397,9 @@ export function determineOptimalChartType(
     explanation: `Query compares '${yKey}' across discrete categories ('${xKey}'). Bar Chart is optimal for clear category contrast.`,
     alternatives: [
       { type: 'pie', label: 'Pie Chart', reason: 'View percentage contribution of each category' },
+      { type: 'donut', label: 'Donut Chart', reason: 'View donut percentage distribution' },
       { type: 'table', label: 'Data Table', reason: 'Exact numbers per group' },
     ],
   };
 }
+

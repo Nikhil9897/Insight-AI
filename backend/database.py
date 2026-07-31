@@ -63,6 +63,8 @@ def run_auto_migrations(target_engine):
         ("imported_datasets", "description", "TEXT"),
         ("imported_datasets", "summary_json", "JSONB" if not is_sqlite else "TEXT"),
         ("imported_datasets", "schema_json", "JSONB" if not is_sqlite else "TEXT"),
+        ("imported_datasets", "imported_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+        ("imported_datasets", "updated_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
 
         # Table: users
         ("users", "last_opened_project_id", "VARCHAR(36)"),
