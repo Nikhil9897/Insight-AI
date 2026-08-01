@@ -35,14 +35,15 @@ class SQLGenerator:
             gran = ir.time_granularity.upper()
 
             if dialect == 'duckdb':
-                date_expr = f"DATE_TRUNC('{gran.lower()}', {q_date}) AS \"{date_col}_granularity\""
-                grp_expr = f"DATE_TRUNC('{gran.lower()}', {q_date})"
+                date_expr = f"DATE_TRUNC('{gran.lower()}', TRY_CAST({q_date} AS DATE)) AS \"{date_col}_granularity\""
+                grp_expr = f"DATE_TRUNC('{gran.lower()}', TRY_CAST({q_date} AS DATE))"
             elif dialect == 'sqlite':
                 date_expr = f"STRFTIME('%Y-%m', {q_date}) AS \"{date_col}_granularity\""
                 grp_expr = f"STRFTIME('%Y-%m', {q_date})"
             else: # postgres / mysql
-                date_expr = f"DATE_TRUNC('{gran.lower()}', {q_date}) AS \"{date_col}_granularity\""
-                grp_expr = f"DATE_TRUNC('{gran.lower()}', {q_date})"
+                date_expr = f"DATE_TRUNC('{gran.lower()}', TRY_CAST({q_date} AS DATE)) AS \"{date_col}_granularity\""
+                grp_expr = f"DATE_TRUNC('{gran.lower()}', TRY_CAST({q_date} AS DATE))"
+
 
             if any(d == date_col for d in ir.dimensions):
                 q_d = q_ident(date_col)
@@ -100,11 +101,14 @@ class SQLGenerator:
                     order_parts.append(f"{q_ident(col)} {direction}")
         elif ir.analysis_shape == "TIME_SERIES" or ir.intent == "trend":
             # Time series queries order chronologically ASC
-            time_col = ir.time_dimension or (ir.date_cols[0] if ir.date_cols else (group_by_parts[0] if group_by_parts else None))
-            if time_col:
+            time_col = ir.time_dimension or (ir.date_cols[0] if ir.date_cols else None)
+            if time_col and ir.time_granularity:
+                order_parts.append(f"\"{time_col}_granularity\" ASC")
+            elif time_col:
                 order_parts.append(f"{q_ident(time_col)} ASC")
             elif group_by_parts:
                 order_parts.append(f"{group_by_parts[0]} ASC")
+
         elif ir.metrics:
             # Default order by first metric descending
             m_first = ir.metrics[0]

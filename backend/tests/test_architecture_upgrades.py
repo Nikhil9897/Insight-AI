@@ -96,8 +96,8 @@ def test_sql_generator_time_series_asc_ordering():
 
     sql = SQLGenerator.generate_sql(ir, table_name="df", dialect="duckdb")
 
-    assert "DATE_TRUNC('month', \"Order_Date\")" in sql
-    assert "ORDER BY \"Order_Date\" ASC" in sql
+    assert "DATE_TRUNC('month', TRY_CAST(\"Order_Date\" AS DATE))" in sql
+    assert "ORDER BY \"Order_Date_granularity\" ASC" in sql
 
 
 def test_chart_recommender_prioritizes_trend_intent():
@@ -114,3 +114,25 @@ def test_chart_recommender_prioritizes_trend_intent():
 
     assert config['type'] in ('line', 'area')
     assert config['type'] != 'kpi'
+
+
+def test_monthly_sales_trend_auto_binds_date_column(sample_sales_df):
+    from backend.nl2sql_engine import NL2SQLEngine
+
+    available_cols = ['Order_Date', 'Sales', 'Region']
+    col_types = {'Order_Date': 'date', 'Sales': 'float', 'Region': 'string'}
+
+    res = NL2SQLEngine.process(
+        query="monthly sales trend",
+        available_columns=available_cols,
+        column_types=col_types,
+        df_data=sample_sales_df
+    )
+
+    assert res['is_valid']
+    sql = res['sql']
+    assert "DATE_TRUNC('month', TRY_CAST(\"Order_Date\" AS DATE))" in sql
+    assert "ORDER BY \"Order_Date_granularity\" ASC" in sql
+    assert "GROUP BY" in sql
+
+

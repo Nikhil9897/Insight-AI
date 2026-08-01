@@ -501,12 +501,13 @@ class IntentParser:
             for cp in column_profiles:
                 cname = cp.get("name", "")
                 ctype = cp.get("type", "string")
-                if ctype in ("number", "float", "int", "integer"):
-                    num_cols.append(cname)
-                elif ctype in ("datetime", "date"):
+                if ctype in ("datetime", "date") or any(k in cname.lower() for k in ["date", "month", "year", "day", "time", "timestamp", "created", "dt"]):
                     date_cols.append(cname)
+                elif ctype in ("number", "float", "int", "integer"):
+                    num_cols.append(cname)
                 else:
                     cat_cols.append(cname)
+
         else:
             # Heuristic classification from column names
             for col in column_names:

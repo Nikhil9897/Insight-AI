@@ -74,7 +74,9 @@ class IntentParser:
         # Find potential metric & dimension column candidates
         num_cols = [c for c, t in column_types.items() if any(nt in str(t).lower() for nt in ('int', 'float', 'double', 'number', 'decimal', 'numeric'))]
         cat_cols = [c for c in available_columns if c not in num_cols]
-        date_cols = [c for c in available_columns if any(dk in c.lower() for dk in ('date', 'time', 'year', 'month', 'timestamp'))]
+        date_cols = [c for c, t in column_types.items() if any(dk in str(t).lower() or dk in c.lower() for dk in ('date', 'time', 'year', 'month', 'timestamp', 'created', 'dt'))]
+        if not date_cols:
+            date_cols = [c for c in available_columns if any(dk in c.lower() for dk in ('date', 'time', 'year', 'month', 'timestamp', 'created', 'dt'))]
 
         for token in tokens:
             resolved = SchemaResolver.resolve_column(token, available_columns)
@@ -93,26 +95,26 @@ class IntentParser:
         # Fallback defaults if no direct column mentioned
         if not raw_metrics and num_cols:
             raw_metrics.append(num_cols[0])
-        
-        has_grouping = bool(re.search(r'\b(by|per|each|across|breakdown)\b', q_lower))
-        if not raw_dims and cat_cols and has_grouping:
-            # Pick non-identifier categorical column
-            clean_cats = [c for c in cat_cols if not any(id_k in c.lower() for id_k in ('id', 'uuid', 'code', 'number'))]
-            if clean_cats:
-                raw_dims.append(clean_cats[0])
 
         ir.metrics = raw_metrics
         ir.dimensions = raw_dims
 
         # Populate time_dimension & analysis_shape
+        if not ir.date_cols and date_cols:
+            ir.date_cols = date_cols[:]
+
         if ir.date_cols:
             ir.time_dimension = ir.date_cols[0]
 
         if ir.time_granularity or re.search(r'\b(trend|over time|monthly|daily|yearly)\b', q_lower):
             ir.intent = "trend"
             ir.analysis_shape = "TIME_SERIES"
-            if ir.date_cols and not any(c in ir.dimensions for c in ir.date_cols):
-                ir.dimensions.insert(0, ir.date_cols[0])
+            if date_cols and not any(c in ir.dimensions for c in date_cols):
+                ir.dimensions.insert(0, date_cols[0])
+                if not ir.date_cols:
+                    ir.date_cols = [date_cols[0]]
+                    ir.time_dimension = date_cols[0]
+
         elif ir.limit or re.search(r'\b(top|first|highest|best|worst|rank)\b', q_lower):
             ir.intent = "ranking"
             ir.analysis_shape = "TOP_N"
