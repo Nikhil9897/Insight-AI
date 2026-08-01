@@ -103,6 +103,63 @@ class DatasetBrain:
 
         domain, domain_conf = cls.classify_domain(all_roles_list)
 
+        # Build Rich Column Metadata & Categorized Knowledge Graph
+        column_metadata: Dict[str, Dict[str, Any]] = {}
+        for col_name, stats in col_stats.items():
+            role = semantic_roles[col_name]
+            is_num = stats['is_numeric']
+            is_dt = stats['is_date']
+            
+            # Determine fine-grained column type
+            if role in ('Revenue Metric', 'Profit Metric'):
+                col_type = 'currency'
+            elif is_dt or role == 'Time Dimension':
+                col_type = 'date'
+            elif is_num:
+                col_type = 'numeric'
+            elif role == 'Identifier':
+                col_type = 'identifier'
+            else:
+                col_type = 'categorical'
+
+            # Default aggregation per column type
+            if role in ('Revenue Metric', 'Profit Metric', 'Volume Metric'):
+                agg = 'SUM'
+            elif role in ('Percentage Metric',):
+                agg = 'AVG'
+            elif is_num:
+                agg = 'SUM'
+            else:
+                agg = 'NONE'
+
+            column_metadata[col_name] = {
+                'name': col_name,
+                'type': col_type,
+                'business_role': role,
+                'aggregation': agg,
+                'sortable': True,
+            }
+
+        # Knowledge Graph: map metrics to categorized dimensions & supported analytical shapes
+        knowledge_graph: Dict[str, Dict[str, Any]] = {}
+        geo_dims = [c for c, r in semantic_roles.items() if r == 'Geography']
+        hier_dims = [c for c, r in semantic_roles.items() if r == 'Product Hierarchy']
+        cust_dims = [c for c, r in semantic_roles.items() if r == 'Customer Dimension']
+        cat_dims = [c for c in dimensions if c not in geo_dims and c not in hier_dims and c not in cust_dims] + cust_dims
+
+        for m in metrics:
+            default_agg = column_metadata.get(m, {}).get('aggregation', 'SUM')
+            knowledge_graph[m] = {
+                'dimensions': {
+                    'time': time_columns,
+                    'categorical': cat_dims,
+                    'geography': geo_dims,
+                    'hierarchy': hier_dims,
+                },
+                'default_aggregation': default_agg,
+                'supported_analysis': ['trend', 'comparison', 'composition', 'ranking', 'distribution']
+            }
+
         return {
             'dataset_name': dataset_name,
             'domain': domain,
@@ -115,4 +172,7 @@ class DatasetBrain:
             'identifiers': identifiers,
             'semantic_roles': semantic_roles,
             'columns': list(col_stats.keys()),
+            'column_metadata': column_metadata,
+            'knowledge_graph': knowledge_graph,
         }
+

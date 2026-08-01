@@ -104,4 +104,30 @@ class IntentParser:
         ir.metrics = raw_metrics
         ir.dimensions = raw_dims
 
+        # Populate time_dimension & analysis_shape
+        if ir.date_cols:
+            ir.time_dimension = ir.date_cols[0]
+
+        if ir.time_granularity or re.search(r'\b(trend|over time|monthly|daily|yearly)\b', q_lower):
+            ir.intent = "trend"
+            ir.analysis_shape = "TIME_SERIES"
+            if ir.date_cols and not any(c in ir.dimensions for c in ir.date_cols):
+                ir.dimensions.insert(0, ir.date_cols[0])
+        elif ir.limit or re.search(r'\b(top|first|highest|best|worst|rank)\b', q_lower):
+            ir.intent = "ranking"
+            ir.analysis_shape = "TOP_N"
+        elif re.search(r'\b(percentage|share|proportion|ratio|composition)\b', q_lower):
+            ir.analysis_shape = "COMPOSITION"
+        elif re.search(r'\b(distribution|histogram|boxplot|spread)\b', q_lower):
+            ir.intent = "distribution"
+            ir.analysis_shape = "DISTRIBUTION"
+        elif re.search(r'\b(scatter|correlation|vs|versus)\b', q_lower):
+            ir.intent = "correlation"
+            ir.analysis_shape = "CORRELATION"
+        elif ir.dimensions:
+            ir.analysis_shape = "CATEGORICAL"
+        else:
+            ir.analysis_shape = "SINGLE_VALUE"
+
         return ir
+

@@ -45,12 +45,13 @@ def classify_column(col_name: str, sample_values: List[Any]) -> str:
 def recommend_chart(
     user_query: str,
     rows: List[Dict[str, Any]],
-    columns: List[str]
+    columns: List[str],
+    analysis_shape: Optional[str] = None,
+    query_intent: Optional[str] = None,
 ) -> Tuple[Dict[str, Any], str]:
     """
     Scoring-Based Visualization Recommendation Engine with Ranked Top 3 & Quality Checks.
-    Scores every visualization type (0-100) based on column classifications, row cardinality,
-    data shape, quality heuristics, and prompt intent keywords.
+    Driven by ExecutionPlan analysis_shape and user intent to guarantee user intent is respected.
     """
     if not rows or not columns:
         default_config = {
@@ -62,6 +63,7 @@ def recommend_chart(
             'alternativeCharts': []
         }
         return default_config, "Defaulting to Table view for empty result set."
+
 
     row_count = len(rows)
     col_count = len(columns)
@@ -245,8 +247,27 @@ def recommend_chart(
     else:
         scores['heatmap'] = 0
 
+    # Step 5: ExecutionPlan Analysis Shape & User Intent Overrides
+    # User intent ALWAYS overrides raw result shape heuristics!
+    if analysis_shape == "TIME_SERIES" or query_intent == "trend" or has_time_intent:
+        scores['line'] = max(scores['line'], 98)
+        scores['area'] = max(scores['area'], 95)
+        scores['kpi'] = min(scores['kpi'], 20)  # Prevent single-row KPI fallback from overriding trend intent
+    elif analysis_shape == "TOP_N" or query_intent == "ranking" or has_top_intent:
+        scores['bar_horizontal'] = max(scores['bar_horizontal'], 98)
+        scores['bar'] = max(scores['bar'], 95)
+    elif analysis_shape == "COMPOSITION" or has_pie_intent or has_donut_intent:
+        scores['donut'] = max(scores['donut'], 98)
+        scores['pie'] = max(scores['pie'], 92)
+    elif analysis_shape == "DISTRIBUTION" or query_intent == "distribution":
+        scores['histogram'] = max(scores['histogram'], 95)
+        scores['box_plot'] = max(scores['box_plot'], 90)
+    elif analysis_shape == "CORRELATION" or query_intent == "correlation" or has_scatter_intent:
+        scores['scatter'] = max(scores['scatter'], 98)
+
     # Rank All Scores Descending and Clamp Max Score at 100
     clamped_scores = {k: min(100, v) for k, v in scores.items()}
+
     ranked_tuples = sorted(clamped_scores.items(), key=lambda x: x[1], reverse=True)
     best_chart, best_score = ranked_tuples[0]
 

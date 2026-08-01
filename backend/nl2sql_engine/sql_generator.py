@@ -44,9 +44,18 @@ class SQLGenerator:
                 date_expr = f"DATE_TRUNC('{gran.lower()}', {q_date}) AS \"{date_col}_granularity\""
                 grp_expr = f"DATE_TRUNC('{gran.lower()}', {q_date})"
 
-            if not any(d == date_col for d in ir.dimensions):
+            if any(d == date_col for d in ir.dimensions):
+                q_d = q_ident(date_col)
+                if q_d in select_parts:
+                    idx = select_parts.index(q_d)
+                    select_parts[idx] = date_expr
+                if q_d in group_by_parts:
+                    idx = group_by_parts.index(q_d)
+                    group_by_parts[idx] = grp_expr
+            else:
                 select_parts.insert(0, date_expr)
                 group_by_parts.insert(0, grp_expr)
+
 
         # Metrics with Aggregate Functions
         stat_fn = (ir.stat_fn or 'SUM').upper()
@@ -89,6 +98,13 @@ class SQLGenerator:
                 direction = ob.get('dir', 'DESC').upper()
                 if col:
                     order_parts.append(f"{q_ident(col)} {direction}")
+        elif ir.analysis_shape == "TIME_SERIES" or ir.intent == "trend":
+            # Time series queries order chronologically ASC
+            time_col = ir.time_dimension or (ir.date_cols[0] if ir.date_cols else (group_by_parts[0] if group_by_parts else None))
+            if time_col:
+                order_parts.append(f"{q_ident(time_col)} ASC")
+            elif group_by_parts:
+                order_parts.append(f"{group_by_parts[0]} ASC")
         elif ir.metrics:
             # Default order by first metric descending
             m_first = ir.metrics[0]
@@ -96,6 +112,7 @@ class SQLGenerator:
             order_parts.append(f"{alias_first} DESC")
 
         order_clause = f"ORDER BY {', '.join(order_parts)}" if order_parts else ""
+
 
         # LIMIT Clause
         limit_val = ir.limit if ir.limit else (15 if ir.dimensions else 100)

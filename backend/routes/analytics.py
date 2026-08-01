@@ -417,11 +417,20 @@ RULES:
         f"Results verified using DuckDB deterministic execution based on top {len(query_result_rows)} records."
     ]
 
-    # Run Rule-Based Chart Recommendation Engine
+    # Run Rule-Based Chart Recommendation Engine (Grounded on ExecutionPlan & Analysis Shape)
     from backend.services.chart_recommender import recommend_chart
-    rec_chart_config, rec_explanation = recommend_chart(user_query, query_result_rows, result_columns)
+    cur_shape = current_ir.analysis_shape if current_ir else (query_plan.query_ir.get('analysis_shape') if query_plan and query_plan.query_ir else None)
+    cur_intent = current_ir.intent if current_ir else (query_plan.intent if query_plan else None)
+    rec_chart_config, rec_explanation = recommend_chart(
+        user_query,
+        query_result_rows,
+        result_columns,
+        analysis_shape=cur_shape,
+        query_intent=cur_intent,
+    )
     chart_cfg_data = rec_chart_config
     t_insight_ms = max(1, int((time.time() - t_insight_start) * 1000))
+
 
     # Record Turn into Conversation Memory
     conversation_memory_service.record_turn(

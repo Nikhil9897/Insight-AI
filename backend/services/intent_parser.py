@@ -70,6 +70,11 @@ class QueryIR(BaseModel):
     # Time
     time_filter: Optional[Dict[str, Any]] = None
     time_granularity: Optional[str] = None   # daily | weekly | monthly | quarterly | yearly
+    time_dimension: Optional[str] = None     # primary date/time column
+
+    # Analytical Shape (replaces static chart hints)
+    analysis_shape: Optional[str] = None     # TIME_SERIES | CATEGORICAL | DISTRIBUTION | CORRELATION |
+                                             # COMPOSITION | SINGLE_VALUE | TOP_N | RANKING | GEO | HIERARCHY
 
     # Statistical
     statistical_function: Optional[str] = None   # MEDIAN | MODE | STDDEV | VARIANCE |
@@ -380,8 +385,9 @@ class IntentParser:
         # 10. Time filter
         time_filter = self._detect_time_filter(q_lower)
 
-        # 11. Time granularity
+        # 11. Time granularity & Time dimension resolution
         time_granularity = self._detect_time_granularity(q_lower)
+        time_dimension: Optional[str] = date_cols[0] if date_cols else None
         if time_granularity and date_cols:
             # Add date column to dimensions if not already there
             if not any(c in dimensions for c in date_cols):
@@ -391,6 +397,11 @@ class IntentParser:
         intent = self._classify_intent(
             q_lower, aggregation, stat_fn, dimensions, filters,
             time_filter, time_granularity, limit, sort_spec
+        )
+
+        # Infer Analytical Shape
+        analysis_shape = self._infer_analysis_shape(
+            intent, dimensions, date_cols, time_granularity, limit, q_lower
         )
 
         # 13. Confidence Scoring
@@ -428,6 +439,8 @@ class IntentParser:
             limit=limit,
             time_filter=time_filter,
             time_granularity=time_granularity,
+            time_dimension=time_dimension,
+            analysis_shape=analysis_shape,
             statistical_function=stat_fn,
             chart=chart,
             confidence=round(confidence, 3),
@@ -436,10 +449,34 @@ class IntentParser:
             matched_columns=matched_columns,
         )
         logger.info(
-            f"[IntentParser] intent={intent} agg={aggregation} metric={metric} "
-            f"dims={dimensions} conf={confidence:.2f} chart={chart}"
+            f"[IntentParser] intent={intent} shape={analysis_shape} agg={aggregation} metric={metric} "
+            f"dims={dimensions} time_dim={time_dimension} conf={confidence:.2f} chart={chart}"
         )
         return ir
+
+    def _infer_analysis_shape(
+        self,
+        intent: str,
+        dimensions: List[str],
+        date_cols: List[str],
+        time_granularity: Optional[str],
+        limit: Optional[int],
+        q: str,
+    ) -> str:
+        if intent == "trend" or time_granularity or (date_cols and any(d in date_cols for d in dimensions)):
+            return "TIME_SERIES"
+        if intent == "ranking" or limit or re.search(r"\b(top|first|highest|best|worst|rank)\b", q):
+            return "TOP_N"
+        if re.search(r"\b(percentage|share|proportion|ratio|composition)\b", q):
+            return "COMPOSITION"
+        if intent == "distribution" or re.search(r"\b(distribution|spread|histogram|boxplot)\b", q):
+            return "DISTRIBUTION"
+        if intent == "statistical" or re.search(r"\b(scatter|correlation|vs|versus)\b", q):
+            return "CORRELATION"
+        if dimensions:
+            return "CATEGORICAL"
+        return "SINGLE_VALUE"
+
 
     # ------------------------------------------------------------------
     # 1. Semantic Column Matching

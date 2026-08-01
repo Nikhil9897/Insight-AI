@@ -17,13 +17,16 @@ class QueryValidator:
         warnings: List[str] = []
 
         # 1. Metric Existence & Data Type Checks
+        num_cols = [c for c, t in column_types.items() if any(nt in str(t).lower() for nt in ('int', 'float', 'double', 'number', 'decimal', 'numeric'))]
+
         for m in ir.metrics:
             if m not in available_columns:
                 errors.append(f"Metric '{m}' does not exist in target table schema.")
             else:
                 col_type = column_types.get(m, 'string').lower()
-                if ir.stat_fn in ('SUM', 'AVG', 'MIN', 'MAX') and col_type in ('string', 'boolean', 'varchar', 'text'):
-                    warnings.append(f"Stat function {ir.stat_fn} requested on non-numeric column '{m}' (type: {col_type}).")
+                if ir.stat_fn in ('SUM', 'AVG', 'MIN', 'MAX', 'STDDEV') and col_type in ('string', 'boolean', 'varchar', 'text'):
+                    # Hard error for invalid math on string columns like AVG(Customer Name)
+                    errors.append(f"Invalid operation: Cannot apply mathematical function {ir.stat_fn} to text column '{m}'.")
 
         # 2. Dimension Existence Checks
         for d in ir.dimensions:
@@ -37,9 +40,19 @@ class QueryValidator:
 
         # 4. Filter Column Verification
         for f in ir.filters:
-            col = f.get('col')
+            col = f.get('col') if isinstance(f, dict) else getattr(f, 'column', None)
             if col and col not in available_columns:
                 errors.append(f"Filter column '{col}' does not exist in target schema.")
+
+        # 5. Semantic Analytical Shape Validation
+        if ir.analysis_shape == "TIME_SERIES" or ir.intent == "trend":
+            date_cols = [c for c, t in column_types.items() if any(dt in str(t).lower() or dt in c.lower() for dt in ('date', 'time', 'year', 'timestamp'))]
+            if not date_cols:
+                errors.append("Invalid query shape: TIME_SERIES trend analysis requested, but no date or timestamp column exists in dataset.")
+
+        if ir.analysis_shape == "CORRELATION" or ir.intent == "correlation":
+            if len(num_cols) < 2 and len(ir.metrics) < 2:
+                errors.append("Invalid query shape: CORRELATION scatter analysis requires at least 2 numeric measure columns.")
 
         is_valid = len(errors) == 0
         ir.validation_notes.extend(warnings)
@@ -47,3 +60,4 @@ class QueryValidator:
             ir.validation_notes.extend(errors)
 
         return is_valid, errors + warnings
+
