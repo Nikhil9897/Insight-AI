@@ -492,6 +492,9 @@ RULES:
 
     ir_confidence_pct = int((current_ir.confidence if current_ir else 1.0) * 100)
 
+    clean_y_label = re.sub(r'^(SUM_|AVG_|MAX_|MIN_|COUNT_)', '', fallback_y).replace('_', ' ')
+    clean_x_label = fallback_x.replace('_', ' ')
+
     return QueryResultResponse(
         query=user_query,
         sql=current_sql,
@@ -520,11 +523,12 @@ RULES:
             f"Calculated deterministic stats for '{peak_category}' ({peak_share_pct:.1f}% share)"
         ],
         followUpQuestions=[
-            f"What are the top 5 outliers by {fallback_y}?",
-            f"Compare {fallback_y} across different segments or regions",
-            f"Show total aggregate sum and average for {fallback_y}",
+            f"What are the top 5 outliers by {clean_y_label}?",
+            f"Compare {clean_y_label} across different {clean_x_label}s or regions",
+            f"Show total aggregate sum and average for {clean_y_label}",
             "Filter results to show only recent entries or high-value records"
         ],
+
         performanceBreakdown=perf_breakdown,
         chartExplanation=f"A {chart_cfg_data.get('type', 'bar').upper()} chart is selected because you are visualizing numerical metrics ('{fallback_y}') grouped across discrete categories ('{fallback_x}').",
         timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),

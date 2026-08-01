@@ -285,7 +285,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center space-x-3 shrink-0">
+        <div className="flex items-center space-x-3 shrink-0 print:hidden no-print">
+
           <button
             onClick={handlePrint}
             className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-colors shadow-xs active:scale-95"
@@ -331,78 +332,39 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         />
       </div>
 
-      {/* 3 & 4. UNIFIED EXECUTIVE BRIEFING & STRATEGIC AI RECOMMENDATIONS ROW */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left: Executive Briefing & Key Observations (7 cols) */}
-        <div className="lg:col-span-7 bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
-              <div className="flex items-center space-x-2.5">
-                <div className="p-2 rounded-xl bg-blue-50 text-blue-600 border border-blue-100">
-                  <Sparkles className="h-4 w-4" />
-                </div>
-                <div>
-                  <h2 className="text-sm font-bold text-slate-900">Executive Briefing</h2>
-                  <p className="text-[11px] text-slate-400">Consolidated AI synthesis & dataset findings</p>
-                </div>
-              </div>
-              <span className="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded-full">
-                AI Synthesis
-              </span>
+      {/* 3. UNIFIED EXECUTIVE BRIEFING */}
+      <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+          <div className="flex items-center space-x-2.5">
+            <div className="p-2 rounded-xl bg-blue-50 text-blue-600 border border-blue-100">
+              <Sparkles className="h-4 w-4" />
             </div>
-
-            {/* Key Observations */}
-            <div className="space-y-2">
-              <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-                Key Observations
-              </div>
-              <ul className="space-y-2.5">
-                {structuredSummary.slice(0, 4).map((item, idx) => (
-                  <li key={idx} className="flex items-start space-x-2.5 text-xs text-slate-700 font-semibold leading-relaxed bg-slate-50/80 p-3 rounded-xl border border-slate-200/60">
-                    <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
-                    <span>{item.text}</span>
-                  </li>
-                ))}
-              </ul>
+            <div>
+              <h2 className="text-sm font-bold text-slate-900">Executive Briefing</h2>
+              <p className="text-[11px] text-slate-400">Consolidated AI synthesis & dataset findings</p>
             </div>
           </div>
+          <span className="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded-full">
+            AI Synthesis
+          </span>
         </div>
 
-        {/* Right: Strategic AI Recommendations (5 cols) */}
-        <div className="lg:col-span-5 bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
-              <div className="flex items-center space-x-2.5">
-                <div className="p-2 rounded-xl bg-amber-50 text-amber-600 border border-amber-100">
-                  <Lightbulb className="h-4 w-4 text-amber-500" />
-                </div>
-                <div>
-                  <h2 className="text-sm font-bold text-slate-900">Strategic AI Recommendations</h2>
-                  <p className="text-[11px] text-slate-400">Actionable analytical next steps</p>
-                </div>
-              </div>
-              <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded-full">
-                Action Items
-              </span>
-            </div>
-
-            {/* Actionable Recommendations */}
-            <div className="space-y-2">
-              <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-                Recommended Actions
-              </div>
-              <div className="space-y-2.5">
-                {aiRecommendations.slice(0, 4).map((rec, idx) => (
-                  <div key={idx} className="flex items-start space-x-2.5 text-xs text-slate-700 bg-slate-50 p-3 rounded-xl border border-slate-200/70">
-                    <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
-                    <span className="font-semibold text-slate-800 text-xs leading-relaxed">{rec.text}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
+        {/* Key Observations */}
+        <div className="space-y-2">
+          <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+            Key Observations
           </div>
+          <ul className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {structuredSummary.slice(0, 4).map((item, idx) => (
+              <li key={idx} className="flex items-start space-x-2.5 text-xs text-slate-700 font-semibold leading-relaxed bg-slate-50/80 p-3 rounded-xl border border-slate-200/60">
+                <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
+                <span>{item.text}</span>
+              </li>
+            ))}
+          </ul>
         </div>
       </div>
+
 
       {/* 6. DATASET ATTRIBUTE DICTIONARY */}
       {activeDataset && (

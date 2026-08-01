@@ -136,3 +136,20 @@ def test_monthly_sales_trend_auto_binds_date_column(sample_sales_df):
     assert "GROUP BY" in sql
 
 
+def test_top_customers_by_sales_sum_and_group_by():
+    from backend.nl2sql_engine import NL2SQLEngine
+
+    res = NL2SQLEngine.process(
+        query="top customers by sales",
+        available_columns=['CustomerID', 'Sales'],
+        column_types={'CustomerID': 'string', 'Sales': 'float'}
+    )
+
+    sql = res['sql']
+    assert 'SUM("Sales")' in sql
+    assert '"CustomerID"' in sql
+    assert 'GROUP BY "CustomerID"' in sql
+    assert 'LIMIT 10' in sql
+
+
+

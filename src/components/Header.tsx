@@ -38,7 +38,8 @@ export const Header: React.FC<HeaderProps> = ({
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
   return (
-    <header className="h-14 glass-header flex items-center justify-between px-6 sticky top-0 z-30">
+    <header className="h-14 glass-header flex items-center justify-between px-6 sticky top-0 z-30 print:hidden no-print">
+
       {/* Left: Dataset picker */}
       <div className="flex items-center gap-3">
         {/* Logo (small, back link) */}

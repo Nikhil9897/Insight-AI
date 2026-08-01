@@ -582,7 +582,8 @@ function WorkspaceInner() {
   return (
     <div className="min-h-screen bg-[#F6F6F4] text-slate-800 font-sans flex flex-col md:flex-row">
       {/* Left Sidebar — Premium Enterprise Layout */}
-      <aside className={`glass-sidebar text-slate-700 flex-shrink-0 flex flex-col md:sticky md:top-0 md:h-screen md:overflow-y-auto z-40 bg-white border-r border-[#e5e5e5] transition-all duration-300 ease-in-out ${isSidebarCollapsed ? 'w-20' : 'w-full md:w-64'}`}>
+      <aside className={`glass-sidebar text-slate-700 flex-shrink-0 flex flex-col md:sticky md:top-0 md:h-screen md:overflow-y-auto z-40 bg-white border-r border-[#e5e5e5] transition-all duration-300 ease-in-out print:hidden no-print ${isSidebarCollapsed ? 'w-20' : 'w-full md:w-64'}`}>
+
         
         {/* Brand Header */}
         <div className="px-4 py-4 flex items-center justify-between border-b border-[#e5e5e5]">

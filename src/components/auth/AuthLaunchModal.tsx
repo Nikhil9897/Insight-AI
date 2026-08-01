@@ -147,7 +147,8 @@ export const AuthLaunchModal: React.FC<AuthLaunchModalProps> = ({
                   </div>
                   <div>
                     <h3 className="text-sm font-black text-slate-900 tracking-tight">Enterprise Analytics Stream</h3>
-                    <p className="text-[10px] font-bold text-slate-400">DuckDB Sub-5ms Relational SQL Engine</p>
+                    <p className="text-[10px] font-bold text-slate-400">DuckDB In-Memory Relational Engine</p>
+
                   </div>
                 </div>
                 <div className="flex items-center space-x-1.5 bg-emerald-50 border border-emerald-200 text-emerald-800 px-3 py-1 rounded-full text-xs font-extrabold shadow-xs">
@@ -337,8 +338,9 @@ export const AuthLaunchModal: React.FC<AuthLaunchModalProps> = ({
                     <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
                     <span>In-Memory Execution</span>
                   </div>
-                  <span className="text-emerald-700 font-mono">&lt; 5ms</span>
+                  <span className="text-emerald-700 font-mono font-bold">Active</span>
                 </div>
+
               </motion.div>
             </div>
           </motion.div>
@@ -347,8 +349,8 @@ export const AuthLaunchModal: React.FC<AuthLaunchModalProps> = ({
         {/* Footer Credit */}
         <div className="relative z-10 hidden md:flex items-center justify-between text-[11px] font-medium text-slate-500 font-mono tracking-wide">
           <span>© 2026 InsightAI, Inc.</span>
-          <span className="hover:text-slate-800 transition-colors cursor-pointer">Privacy & Terms</span>
         </div>
+
       </div>
 
       {/* ======================================================== */}

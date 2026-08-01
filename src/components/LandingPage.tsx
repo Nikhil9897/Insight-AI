@@ -220,8 +220,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                   </div>
                 </div>
                 <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
-                  Sub-5ms Fast Path
+                  Fast SQL Engine
                 </span>
+
               </div>
 
               {/* Sample Query Input Mock */}
@@ -388,6 +389,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             )}
 
             {/* Tab 2: SQL Display */}
+
+
             {activeTab === 'sql' && (
               <div className="relative bg-slate-900 p-5 rounded-2xl border border-slate-800 font-mono text-xs text-blue-300">
                 <button
@@ -404,12 +407,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         </div>
       </section>
 
-      {/* 4. Core Capabilities & Database Connectors */}
+
+      {/* 4. Core Capabilities */}
       <section id="features" className="w-full py-20 px-6 md:px-12 lg:px-16 bg-[#F6F6F4] border-t border-slate-200/80">
         <div className="max-w-7xl mx-auto space-y-12">
           <div className="text-center space-y-3 max-w-3xl mx-auto">
             <span className="text-xs font-extrabold uppercase tracking-widest text-emerald-700 font-mono">
-              Enterprise Capabilities
+              Core Capabilities
             </span>
             <h2 className="text-3xl sm:text-5xl font-extrabold text-slate-950 tracking-tight">
               Engineered for natural data exploration.
@@ -421,9 +425,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               <div className="p-3 rounded-2xl bg-emerald-50 text-emerald-700 border border-emerald-100 w-fit">
                 <Code2 className="h-6 w-6" />
               </div>
-              <h3 className="text-base font-bold text-slate-950">Sub-5ms Fast-Path SQL</h3>
+              <h3 className="text-base font-bold text-slate-950">Fast SQL Generation</h3>
               <p className="text-xs text-slate-600 leading-relaxed font-medium">
-                Deterministic ANSI SQL generation constructs queries directly on DuckDB without LLM inference latency.
+                Generates clean SQL queries deterministically and executes them directly on DuckDB.
               </p>
             </div>
 
@@ -431,9 +435,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               <div className="p-3 rounded-2xl bg-blue-50 text-blue-700 border border-blue-100 w-fit">
                 <Lightbulb className="h-6 w-6" />
               </div>
-              <h3 className="text-base font-bold text-slate-950">DuckDB Verified Insights</h3>
+              <h3 className="text-base font-bold text-slate-950">Data Insights & Verification</h3>
               <p className="text-xs text-slate-600 leading-relaxed font-medium">
-                Executive business outcome bullets backed by 100% deterministic mathematical evaluation and collapsible execution traces.
+                Calculates aggregated metrics, summary trends, and structured query explanations directly from data rows.
               </p>
             </div>
 
@@ -441,9 +445,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               <div className="p-3 rounded-2xl bg-amber-50 text-amber-700 border border-amber-100 w-fit">
                 <ShieldCheck className="h-6 w-6" />
               </div>
-              <h3 className="text-base font-bold text-slate-950">Bounded Confidence Score</h3>
+              <h3 className="text-base font-bold text-slate-950">Query Confidence Score</h3>
               <p className="text-xs text-slate-600 leading-relaxed font-medium">
-                Intuitive 0–100% score bounding with executive recommendation tiers (Strong Recommendation, Very High Confidence).
+                Provides a clear 0–100% confidence rating based on schema matching and query validation.
               </p>
             </div>
 
@@ -451,9 +455,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               <div className="p-3 rounded-2xl bg-purple-50 text-purple-700 border border-purple-100 w-fit">
                 <LayoutDashboard className="h-6 w-6" />
               </div>
-              <h3 className="text-base font-bold text-slate-950">Dataset-Scoped Dashboards</h3>
+              <h3 className="text-base font-bold text-slate-950">Interactive Dashboards</h3>
               <p className="text-xs text-slate-600 leading-relaxed font-medium">
-                Isolated pinned analytics, dataset quality health metrics, and strategic executive briefings per dataset.
+                Pin query results, charts, and summary statistics to your custom dataset dashboard.
               </p>
             </div>
 
@@ -461,9 +465,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               <div className="p-3 rounded-2xl bg-cyan-50 text-cyan-700 border border-cyan-100 w-fit">
                 <Layers className="h-6 w-6" />
               </div>
-              <h3 className="text-base font-bold text-slate-950">Schema & ERD Explorer</h3>
+              <h3 className="text-base font-bold text-slate-950">Schema Inspector</h3>
               <p className="text-xs text-slate-600 leading-relaxed font-medium">
-                Typed SQL data type mapping, primary key groundings, and cardinality profiling for robust database inspection.
+                View column names, data types, row counts, and summary statistics for your uploaded dataset.
               </p>
             </div>
 
@@ -471,9 +475,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               <div className="p-3 rounded-2xl bg-teal-50 text-teal-700 border border-teal-100 w-fit">
                 <Bot className="h-6 w-6" />
               </div>
-              <h3 className="text-base font-bold text-slate-950">Agentic LLM Failover</h3>
+              <h3 className="text-base font-bold text-slate-950">AI Provider Fallback</h3>
               <p className="text-xs text-slate-600 leading-relaxed font-medium">
-                Fast 1.2s health ping check seamlessly fails over to Groq Cloud API, eliminating 30-second connection stalls.
+                Automatically handles API connection fallbacks to maintain uninterrupted query processing.
               </p>
             </div>
           </div>

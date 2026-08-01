@@ -38,52 +38,92 @@ export const NLQueryConsole: React.FC<NLQueryConsoleProps> = ({
   const mainCat = strCols[0] || colNames[0] || 'group';
 
   const getSmarterSuggestions = (): string[] => {
-    if (dataset.aiProfile?.suggestedQuestions && dataset.aiProfile.suggestedQuestions.length > 0) {
-      return dataset.aiProfile.suggestedQuestions;
+    // Extract actual columns present in active dataset
+    const availableCols = dataset.summary?.columns?.map((c) => c.name) ||
+      (dataset.data && dataset.data[0] ? Object.keys(dataset.data[0]) : []);
+
+    if (!availableCols || availableCols.length === 0) {
+      return ['Summarize this dataset', 'What columns are available?', 'Are there any missing values?'];
     }
-    const nameLower = dataset.name.toLowerCase();
-    if (nameLower.includes('titanic') || colNames.includes('Sex') || colNames.includes('Survived')) {
-      return [
-        'Survival count by passenger class',
-        'Compare survival between males and females',
-        'Average fare by survival status',
-        'Top 10 passengers by highest fare',
-      ];
-    }
-    if ((colNames.includes('Sales') || colNames.includes('Profit')) && (colNames.includes('Region') || colNames.includes('Category'))) {
-      return [
-        'Monthly sales trend',
-        'Revenue by category',
-        'Profit by region',
-        'Top customers by sales',
-        'Average discount by segment',
-      ];
-    }
+
+    const isIdCol = (name: string) => {
+      const n = name.toLowerCase();
+      return (n.endsWith('id') && n !== 'customerid') || n === 'id' || n.includes('uuid') || n.includes('code');
+    };
+
+    const numCols = dataset.summary?.columns
+      ?.filter((c) => c.type === 'number' && !isIdCol(c.name))
+      .map((c) => c.name) ||
+      availableCols.filter((c) => typeof dataset.data?.[0]?.[c] === 'number' && !isIdCol(c));
+
+    const catCols = dataset.summary?.columns
+      ?.filter((c) => (c.type === 'string' || c.distinctCount <= 15) && !isIdCol(c.name))
+      .map((c) => c.name) ||
+      availableCols.filter((c) => typeof dataset.data?.[0]?.[c] === 'string' && !isIdCol(c));
+
+    const dateCols = dataset.summary?.columns
+      ?.filter((c) => c.type === 'datetime' || ['date', 'time', 'year', 'month', 'created', 'dt'].some((dk) => c.name.toLowerCase().includes(dk)))
+      .map((c) => c.name) ||
+      availableCols.filter((c) => ['date', 'time', 'year', 'month', 'created', 'dt'].some((dk) => c.toLowerCase().includes(dk)));
+
+    const findCol = (terms: string[]) => availableCols.find((c) => terms.some((t) => c.toLowerCase().includes(t)));
+
     const suggestions: string[] = [];
-    if (strCols[0] && numCols[0]) {
-      suggestions.push(`Total ${numCols[0]} by ${strCols[0]}`);
-      suggestions.push(`Average ${numCols[0]} by ${strCols[0]}`);
+
+    // 1. Time-Series Trend (ONLY IF a Date column and Numeric column exist in dataset)
+    if (dateCols.length > 0 && numCols.length > 0) {
+      const primaryMetric = numCols[0].replace(/_/g, ' ');
+      suggestions.push(`Monthly ${primaryMetric} trend`);
     }
-    if (strCols[0]) suggestions.push(`Record count by ${strCols[0]}`);
-    if (strCols[1] && numCols[0]) suggestions.push(`Top 10 ${strCols[1]} by ${numCols[0]}`);
-    if (numCols[1]) suggestions.push(`Compare ${numCols[0]} vs ${numCols[1]}`);
-    return suggestions.length >= 3
-      ? suggestions
-      : [
-          `Breakdown by ${mainCat}`,
-          `Highest average ${mainNum} by ${mainCat}`,
-          `Top 5 ${mainCat} by total ${mainNum}`,
-          `Count by ${mainCat}`,
-        ];
+
+    // 2. Metric by Categorical Dimension Breakdown
+    const mainCat = catCols.find((c) => !c.toLowerCase().includes('name')) || catCols[0];
+    const mainNum = numCols[0];
+
+    if (mainCat && mainNum) {
+      suggestions.push(`${mainNum.replace(/_/g, ' ')} by ${mainCat.replace(/_/g, ' ')}`);
+    }
+
+    // 3. Region / Geography (ONLY IF Region/State/City column exists in dataset)
+    const regionCol = findCol(['region', 'state', 'territory', 'zone', 'country', 'city']);
+    if (regionCol && mainNum && regionCol !== mainCat) {
+      suggestions.push(`${mainNum.replace(/_/g, ' ')} by ${regionCol.replace(/_/g, ' ')}`);
+    }
+
+    // 4. Customer / Entity Ranking (ONLY IF Customer/Client column exists in dataset)
+    const customerCol = findCol(['customer', 'client', 'buyer']);
+    if (customerCol && mainNum) {
+      suggestions.push(`Top ${customerCol.replace(/_/g, ' ')}s by ${mainNum.replace(/_/g, ' ')}`);
+    } else if (catCols[1] && mainNum) {
+      suggestions.push(`Top 10 ${catCols[1].replace(/_/g, ' ')} by ${mainNum.replace(/_/g, ' ')}`);
+    }
+
+    // 5. Average Secondary Metric (ONLY IF a secondary numeric column and category column exist)
+    const secNum = numCols.find((c) => c !== mainNum);
+    const segmentCol = findCol(['segment', 'category', 'department', 'type', 'group']);
+    if (secNum && segmentCol) {
+      suggestions.push(`Average ${secNum.replace(/_/g, ' ')} by ${segmentCol.replace(/_/g, ' ')}`);
+    } else if (secNum && mainCat) {
+      suggestions.push(`Average ${secNum.replace(/_/g, ' ')} by ${mainCat.replace(/_/g, ' ')}`);
+    }
+
+    // Fallback if dataset has minimal columns
+    if (suggestions.length === 0 && mainCat) {
+      suggestions.push(`Record count by ${mainCat.replace(/_/g, ' ')}`);
+    }
+
+    // Deduplicate & return strictly grounded suggestions
+    return Array.from(new Set(suggestions));
   };
 
-  // Combined suggestions — SQL + conversational, same visual style
+  // Combined suggestions — dataset-grounded SQL prompts + generic dataset inspection
   const allSuggestions = [
     ...getSmarterSuggestions(),
     'Summarize this dataset',
     'What columns are available?',
     'Are there any missing values?',
   ];
+
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

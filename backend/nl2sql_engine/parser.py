@@ -19,7 +19,7 @@ class IntentParser:
             ir.stat_fn = 'AVG'
         elif re.search(r'\b(count|number of|total number|how many)\b', q_lower):
             ir.stat_fn = 'COUNT'
-        elif re.search(r'\b(max|maximum|highest|top|most)\b', q_lower):
+        elif re.search(r'\b(max|maximum|highest|most)\b', q_lower) and not re.search(r'\btop\b', q_lower):
             ir.stat_fn = 'MAX'
         elif re.search(r'\b(min|minimum|lowest|least|bottom)\b', q_lower):
             ir.stat_fn = 'MIN'
@@ -40,6 +40,8 @@ class IntentParser:
         limit_match = re.search(r'\b(top|first|limit)\s+(\d+)\b', q_lower)
         if limit_match:
             ir.limit = int(limit_match.group(2))
+        elif re.search(r'\btop\b', q_lower):
+            ir.limit = 10  # default top 10 for ranking queries
 
         # 4. Chart Intent Detection
         if re.search(r'\bdonut\b', q_lower):
@@ -72,11 +74,14 @@ class IntentParser:
         raw_dims = []
 
         # Find potential metric & dimension column candidates
-        num_cols = [c for c, t in column_types.items() if any(nt in str(t).lower() for nt in ('int', 'float', 'double', 'number', 'decimal', 'numeric'))]
+        num_cols = [c for c, t in column_types.items() if any(nt in (t if isinstance(t, str) else str(t)).lower() for nt in ('int', 'float', 'double', 'number', 'decimal', 'numeric'))]
         cat_cols = [c for c in available_columns if c not in num_cols]
-        date_cols = [c for c, t in column_types.items() if any(dk in str(t).lower() or dk in c.lower() for dk in ('date', 'time', 'year', 'month', 'timestamp', 'created', 'dt'))]
+        date_cols = [c for c, t in column_types.items() if any(dk in (t if isinstance(t, str) else str(t)).lower() or dk in c.lower() for dk in ('date', 'time', 'year', 'month', 'timestamp', 'created', 'dt'))]
+
         if not date_cols:
             date_cols = [c for c in available_columns if any(dk in c.lower() for dk in ('date', 'time', 'year', 'month', 'timestamp', 'created', 'dt'))]
+
+        user_wants_id = any(id_k in q_lower for id_k in ('id', 'uuid', 'code', 'number'))
 
         for token in tokens:
             resolved = SchemaResolver.resolve_column(token, available_columns)
@@ -89,12 +94,25 @@ class IntentParser:
                         raw_metrics.append(resolved)
                 else:
                     is_id = any(id_k in resolved.lower() for id_k in ('id', 'uuid', 'code', 'number'))
-                    if resolved not in raw_dims and not is_id:
-                        raw_dims.append(resolved)
+                    if resolved not in raw_dims:
+                        if not is_id or user_wants_id or (len(cat_cols) == 1 and cat_cols[0] == resolved):
+                            raw_dims.append(resolved)
+
 
         # Fallback defaults if no direct column mentioned
         if not raw_metrics and num_cols:
             raw_metrics.append(num_cols[0])
+
+        has_grouping = bool(re.search(r'\b(by|per|each|across|breakdown|grouped by)\b', q_lower))
+        has_ranking = bool(ir.limit or re.search(r'\b(top|first|highest|best|worst|rank)\b', q_lower))
+
+        if not raw_dims and cat_cols and (has_grouping or has_ranking):
+            clean_cats = [c for c in cat_cols if not any(id_k in c.lower() for id_k in ('id', 'uuid', 'code', 'number'))]
+            if clean_cats:
+                raw_dims.append(clean_cats[0])
+            elif cat_cols:
+                raw_dims.append(cat_cols[0])
+
 
         ir.metrics = raw_metrics
         ir.dimensions = raw_dims
@@ -118,8 +136,12 @@ class IntentParser:
         elif ir.limit or re.search(r'\b(top|first|highest|best|worst|rank)\b', q_lower):
             ir.intent = "ranking"
             ir.analysis_shape = "TOP_N"
+            # Ensure ranking query has a grouping dimension
+            if not ir.dimensions and cat_cols:
+                ir.dimensions = [cat_cols[0]]
         elif re.search(r'\b(percentage|share|proportion|ratio|composition)\b', q_lower):
             ir.analysis_shape = "COMPOSITION"
+
         elif re.search(r'\b(distribution|histogram|boxplot|spread)\b', q_lower):
             ir.intent = "distribution"
             ir.analysis_shape = "DISTRIBUTION"

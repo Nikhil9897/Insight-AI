@@ -283,3 +283,70 @@
 .schema-panel-enter {
   animation: schemaFadeIn 0.25s ease-out forwards;
 }
+
+/* ── Print Media Styles for Clean PDF Reports ────────────────────────────── */
+@media print {
+  /* 1. Hide sidebars, headers, footers, interactive buttons, search bars, and navigation elements */
+  aside,
+  header,
+  nav,
+  .glass-sidebar,
+  .glass-header,
+  .no-print,
+  .print\:hidden,
+  button,
+  input,
+  select,
+  textarea,
+  .toast,
+  [role="dialog"] {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    width: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+  }
+
+  /* 2. Reset workspace layout to full width on paper */
+  html, body {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Remove flex layout offset caused by hidden sidebar */
+  body > div,
+  main,
+  .flex-1 {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background-color: #ffffff !important;
+  }
+
+  /* 3. Cards & Charts layout optimization */
+  .chart-card,
+  .ws-section,
+  .bg-white {
+    box-shadow: none !important;
+    border: 1px solid #e2e8f0 !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* 4. Page margins & padding for clean PDF pages */
+  @page {
+    margin: 15mm 15mm 15mm 15mm;
+    size: auto;
+  }
+}
+
