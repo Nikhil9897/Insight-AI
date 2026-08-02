@@ -10,9 +10,65 @@ class IntentParser:
     """
 
     @classmethod
-    def parse_query(cls, query: str, available_columns: List[str], column_types: Dict[str, str]) -> QueryIR:
+    def parse_query(
+        cls,
+        query: str,
+        available_columns: List[str],
+        column_types: Dict[str, str],
+        brain_profile: Optional[Dict[str, Any]] = None,
+        df_data: Optional[Any] = None
+    ) -> QueryIR:
         q_lower = query.lower()
+
+        # Step 0: Try DatasetBrain + QueryUnderstandingEngine if DataFrame or brain_profile available
+        if df_data is not None and not brain_profile:
+            try:
+                import pandas as pd
+                from backend.services.dataset_brain import DatasetBrain
+                if isinstance(df_data, pd.DataFrame):
+                    df_obj = df_data
+                else:
+                    df_obj = pd.DataFrame(df_data)
+                brain_profile = DatasetBrain.build_brain_profile(df_obj)
+            except Exception:
+                brain_profile = None
+
+        if brain_profile:
+            try:
+                from backend.services.query_understanding_engine import QueryUnderstandingEngine
+                understanding = QueryUnderstandingEngine.understand(query, brain_profile)
+                plan = understanding.execution_plan
+
+                ir = QueryIR(raw_query=query)
+                ir.intent = plan.intent
+                ir.metrics = plan.metrics
+                ir.dimensions = plan.group_by
+                ir.filters = plan.filters
+                ir.limit = plan.limit_val
+                ir.analysis_shape = plan.analysis_shape
+                ir.time_dimension = plan.time_dimension
+                ir.time_granularity = plan.time_granularity
+                if plan.time_dimension:
+                    ir.date_cols = [plan.time_dimension]
+                if re.search(r'\b(average|avg|mean)\b', q_lower):
+
+                    ir.stat_fn = 'AVG'
+                elif re.search(r'\b(count|number of|total number|how many)\b', q_lower):
+                    ir.stat_fn = 'COUNT'
+                elif re.search(r'\b(max|maximum|highest|most)\b', q_lower) and not re.search(r'\btop\b', q_lower):
+                    ir.stat_fn = 'MAX'
+                elif re.search(r'\b(min|minimum|lowest|least|bottom)\b', q_lower):
+                    ir.stat_fn = 'MIN'
+                else:
+                    ir.stat_fn = 'SUM'
+
+                return ir
+
+            except Exception:
+                pass
+
         ir = QueryIR(raw_query=query)
+
 
         # 1. Stat Function Detection
         if re.search(r'\b(average|avg|mean)\b', q_lower):

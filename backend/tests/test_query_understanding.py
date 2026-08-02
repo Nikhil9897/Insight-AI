@@ -83,3 +83,28 @@ def test_response_router_capability_dispatch(sales_dataset_df):
     assert res_query["capability"] == Capability.QUERY.value
     assert res_query["requires_sql"]
     assert "execution_plan" in res_query
+
+
+def test_top_selling_product_in_south_region_sql_generation():
+    df = pd.DataFrame({
+        'Product': ['Widget A', 'Widget B', 'Widget C'],
+        'Quantity': [10, 25, 15],
+        'Sales': [100.0, 250.0, 150.0],
+        'Region': ['South', 'South', 'North']
+    })
+    
+    from backend.nl2sql_engine.orchestrator import NL2SQLEngine
+    res = NL2SQLEngine.process(
+        query="Top selling product in South region",
+        available_columns=list(df.columns),
+        column_types={c: str(df[c].dtype) for c in df.columns},
+        df_data=df
+    )
+
+    sql = res['sql']
+    assert 'WHERE "Region" = \'South\'' in sql or "WHERE \"Region\" = 'South'" in sql
+    assert 'GROUP BY "Product"' in sql
+    assert 'GROUP BY "Product", "Region"' not in sql
+    assert 'ORDER BY' in sql
+    assert 'LIMIT' in sql
+

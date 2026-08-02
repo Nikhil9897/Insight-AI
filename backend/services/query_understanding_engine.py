@@ -48,6 +48,7 @@ class ExecutionPlan(BaseModel):
     intent: str = "aggregation"        # ranking, trend, aggregation, distribution, comparison
     metric: Optional[str] = None
     metrics: List[str] = []
+    aggregation: str = "SUM"           # SUM, AVG, COUNT, MAX, MIN
     dimension: Optional[str] = None
     group_by: List[str] = []
     filters: List[Dict[str, Any]] = []
@@ -56,7 +57,10 @@ class ExecutionPlan(BaseModel):
     limit_val: Optional[int] = None
     time_dimension: Optional[str] = None
     time_granularity: Optional[str] = None
+    chart_hint: Optional[str] = None
     analysis_shape: str = "CATEGORICAL" # TIME_SERIES, TOP_N, CATEGORICAL, SINGLE_VALUE, DISTRIBUTION
+    confidence: float = 1.0
+
 
 
 class QueryUnderstanding(BaseModel):
@@ -163,18 +167,21 @@ class QueryUnderstandingEngine:
                             detected_dims.append(res_col)
                             reasoning.append(f"Mapped dimension '{res_col}'.")
 
+        has_ranking = bool(re.search(r'\b(top|first|highest|best|worst|rank|driving)\b', q_lower))
+
         # Metric & Dimension Fallbacks
         if not detected_metrics and metrics_schema:
             detected_metrics.append(metrics_schema[0])
             reasoning.append(f"Defaulted primary metric to '{metrics_schema[0]}'.")
 
-        if not detected_dims and dims_schema:
+        if not detected_dims and dims_schema and (has_explicit_grouping or has_ranking):
             cand = [d for d in dims_schema if d not in filtered_cols]
             if cand:
                 detected_dims.append(cand[0])
                 reasoning.append(f"Grounded primary dimension to '{cand[0]}'.")
             elif dims_schema:
                 detected_dims.append(dims_schema[0])
+
 
         time_dim = time_cols_schema[0] if time_cols_schema else None
         time_gran = None
@@ -292,10 +299,33 @@ class QueryUnderstandingEngine:
         else:
             shape = "SINGLE_VALUE"
 
+        # Aggregate function detection
+        agg_fn = "SUM"
+        if re.search(r'\b(average|avg|mean)\b', q_lower):
+            agg_fn = "AVG"
+        elif re.search(r'\b(count|number of|total number|how many)\b', q_lower):
+            agg_fn = "COUNT"
+        elif re.search(r'\b(max|maximum|highest|most)\b', q_lower) and not re.search(r'\btop\b', q_lower):
+            agg_fn = "MAX"
+        elif re.search(r'\b(min|minimum|lowest|least|bottom)\b', q_lower):
+            agg_fn = "MIN"
+
+        # Chart hint inference
+        chart_hint = "bar"
+        if shape == "TIME_SERIES":
+            chart_hint = "line"
+        elif shape == "TOP_N":
+            chart_hint = "bar"
+        elif shape == "SINGLE_VALUE":
+            chart_hint = "kpi"
+        elif re.search(r'\b(pie|donut)\b', q_lower):
+            chart_hint = "pie"
+
         execution_plan = ExecutionPlan(
             intent=intent,
             metric=detected_metrics[0] if detected_metrics else None,
             metrics=detected_metrics,
+            aggregation=agg_fn,
             dimension=detected_dims[0] if detected_dims else None,
             group_by=detected_dims,
             filters=[{"column": f.column, "operator": f.operator, "value": f.value} for f in detected_filters],
@@ -304,8 +334,11 @@ class QueryUnderstandingEngine:
             limit_val=limit_val,
             time_dimension=time_dim,
             time_granularity=time_gran,
-            analysis_shape=shape
+            chart_hint=chart_hint,
+            analysis_shape=shape,
+            confidence=win_score
         )
+
 
         return QueryUnderstanding(
             query=query,

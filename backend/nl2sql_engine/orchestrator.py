@@ -31,8 +31,9 @@ class NL2SQLEngine:
         dialect: str = "duckdb"
     ) -> Dict[str, Any]:
         
-        # Step 1: Intent Parsing & Entity Extraction
-        ir: QueryIR = IntentParser.parse_query(query, available_columns, column_types)
+        # Step 1: Intent Parsing & Entity Extraction (with DatasetBrain value index lookup if df_data available)
+        ir: QueryIR = IntentParser.parse_query(query, available_columns, column_types, df_data=df_data)
+
 
         # Step 2: Multi-Tier Fuzzy Schema Grounding
         resolved_metrics, resolved_dims, grounding_notes = SchemaResolver.resolve_query_columns(

@@ -149,6 +149,22 @@ class DatasetBrain:
             else:
                 agg = 'NONE'
 
+            # Supported charts & analytical shapes per column
+            if is_num:
+                recommended_charts = ["line", "bar", "area"] if time_columns else ["bar", "kpi"]
+                supported_shapes = ["trend", "ranking", "comparison", "distribution"]
+            elif is_dt or role == 'Time Dimension':
+                recommended_charts = ["line", "area"]
+                supported_shapes = ["trend", "time_series"]
+            elif role in ('Geography', 'Product Hierarchy'):
+                recommended_charts = ["bar", "treemap", "pie"]
+                supported_shapes = ["ranking", "comparison", "distribution"]
+            else:
+                recommended_charts = ["bar", "pie", "donut"]
+                supported_shapes = ["distribution", "grouping"]
+
+            d_vals = distinct_values_map.get(col_name, [])
+
             column_metadata[col_name] = {
                 'name': col_name,
                 'role': 'metric' if is_num else ('time' if is_dt else 'dimension'),
@@ -158,8 +174,13 @@ class DatasetBrain:
                 'filterable': True,
                 'groupable': not is_num or col_name in time_columns,
                 'sortable': True,
-                'distinct_values': distinct_values_map.get(col_name, []),
+                'cardinality': len(d_vals),
+                'distinct_values': d_vals,
+                'example_values': d_vals[:5],
+                'recommended_charts': recommended_charts,
+                'supported_analysis': supported_shapes,
             }
+
 
         # Knowledge Graph: map metrics to categorized dimensions & supported analytical shapes
         knowledge_graph: Dict[str, Dict[str, Any]] = {}

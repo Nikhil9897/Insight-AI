@@ -61,28 +61,6 @@ export const QueryResultTabs: React.FC<QueryResultTabsProps> = ({
 
   return (
     <div className="bg-white border border-[#e5e5e5] rounded-xl shadow-soft-xs overflow-hidden">
-      {/* 🚀 Follow-up Questions Header (If Available) */}
-      {activeQueryResult.followUpQuestions && activeQueryResult.followUpQuestions.length > 0 && (
-        <div className="px-5 py-3 border-b border-[#f0f0ef] bg-[#fafafa]">
-          <div className="flex items-center gap-1.5 mb-2 text-xs font-bold text-slate-700">
-            <Sparkles className="h-3.5 w-3.5 text-blue-600" />
-            <span>Suggested Next Questions:</span>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {activeQueryResult.followUpQuestions.map((q, idx) => (
-              <button
-                key={idx}
-                onClick={() => onExecuteQuery(q)}
-                disabled={isExecuting}
-                className="text-xs bg-white hover:bg-blue-50 text-slate-700 hover:text-blue-700 px-3 py-1.5 rounded-lg border border-[#e5e5e5] hover:border-blue-300 font-medium transition-all text-left flex items-center gap-1.5 group disabled:opacity-50 cursor-pointer shadow-2xs"
-              >
-                <span>{q}</span>
-                <ArrowRight className="h-3 w-3 text-slate-400 group-hover:text-blue-600 group-hover:translate-x-0.5 transition-all shrink-0" />
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* 🛠️ Collapsible Developer & Telemetry Drawer Toggle */}
       <div className="px-5 py-2.5 bg-[#fcfcfc] flex items-center justify-between">

@@ -243,27 +243,7 @@ export const NLQueryConsole: React.FC<NLQueryConsoleProps> = ({
               </p>
             </div>
 
-            {/* Follow-ups */}
-            {activeChatResult.followUpQuestions && activeChatResult.followUpQuestions.length > 0 && (
-              <div className="px-5 pb-4 pt-2 border-t border-[#f0f0ef]">
-                <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider mb-2">
-                  Follow-up questions
-                </p>
-                <div className="space-y-1.5">
-                  {activeChatResult.followUpQuestions.map((fq, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => { setPromptInput(fq); onExecuteQuery(fq); }}
-                      disabled={isExecuting}
-                      className="flex items-center gap-2 text-xs text-slate-500 hover:text-blue-600 font-normal text-left group disabled:opacity-50 transition-colors"
-                    >
-                      <ChevronRight className="h-3 w-3 text-slate-300 group-hover:text-blue-400 shrink-0 transition-colors" />
-                      <span>{fq}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
+
           </motion.div>
         )}
       </AnimatePresence>
