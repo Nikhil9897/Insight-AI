@@ -1,117 +1,214 @@
 <div align="center">
-  # 🚀 InsightAI - Next-Gen AI Data Analytics
-  
-  **Talk to your database using Natural Language. Powered by Groq, Gemini, and Local Ollama Fallbacks.**
-  
-  <p align="center">
-    <img src="https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB" alt="React" />
-    <img src="https://img.shields.io/badge/Vite-B73BFE?style=for-the-badge&logo=vite&logoColor=FFD62E" alt="Vite" />
-    <img src="https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI" />
-    <img src="https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python" />
-    <img src="https://img.shields.io/badge/Supabase-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white" alt="Supabase" />
-  </p>
+
+# 🚀 InsightAI — AI Data Analytics Platform
+
+**Talk to your data in plain English. Driven by an enterprise-grade NL2SQL Engine & Hybrid LLM Routing.**
+
+[![React](https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Vite](https://img.shields.io/badge/Vite-6.0-646CFF?style=for-the-badge&logo=vite&logoColor=white)](https://vitejs.dev/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![DuckDB](https://img.shields.io/badge/DuckDB-1.1-FFF000?style=for-the-badge&logo=duckdb&logoColor=black)](https://duckdb.org/)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind-4.0-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
+
 </div>
 
 ---
 
 ## 🌟 Overview
 
-**InsightAI** is an intelligent, high-performance data analytics workspace that bridges the gap between raw data and actionable business insights. It allows non-technical users and enterprise analysts to query complex datasets using **natural language (NL2SQL)**, instantly generating accurate SQL queries, explanations, and beautiful visualizations.
+**InsightAI** is a next-generation data analytics workspace that transforms natural language questions into accurate SQL, executable analytical pipelines, and rich interactive visualizations. 
 
-The platform utilizes a **Hybrid Multi-Agent LLM Architecture** for maximum reliability and speed:
-1. **Groq (Llama 3)** - For ultra-fast, high-speed initial inference.
-2. **Google Gemini (2.0 / 2.5 Pro)** - For deep reasoning and complex queries.
-3. **Ollama (Qwen3:8b)** - A 100% local, offline fallback engine ensuring the system never goes down even without internet.
+Designed for both technical teams and non-technical business analysts, InsightAI features a **Precision-First NL2SQL Engine** with multi-tier fuzzy schema grounding, pre-SQL query validation, and dry-run SQL auto-repair.
+
+### 🛡️ Multi-Provider Hybrid LLM Failover System
+
+```
+[ User Query ]
+      │
+      ▼
+┌──────────────┐     Fallback     ┌──────────────┐     Offline     ┌──────────────┐
+│  Groq Engine │ ────────────────►│ Gemini 2.0   │ ──────────────►│ Local Ollama │
+│ (Llama 3.3)  │   (API Error)    │  (Flash/Pro) │   (No Network) │ (Qwen/DeepS) │
+└──────────────┘                  └──────────────┘                 └──────────────┘
+```
+
+1. **Groq (Llama 3.3 70B)** — Ultra-fast primary inference for low-latency query generation.
+2. **Google Gemini (2.0 Flash / Pro)** — Deep logical reasoning for complex analytical queries.
+3. **Local Ollama (Qwen 2.5 / DeepSeek-R1)** — 100% offline fallback ensuring strict privacy and zero downtime.
 
 ---
 
 ## 📸 Screenshots
 
-### 📊 Landing Page
+<div align="center">
+
+### 📊 Landing Page & Analytics Console
 ![Landing Page](screenshots/landing_page.png)
 
-### 💬 Sign In Page
+### 📈 Interactive Dashboards & Smart Visualizations
+![Dashboard](screenshots/dashboard.png)
+
+### 🔒 Authentication & Workspace Management
 ![Sign In Page](screenshots/sign_in_page.png)
 
-### 📈 Dashboard
-![Dashboard](screenshots/dashboard.png)
+</div>
+
+---
+
+## 📁 Repository Structure
+
+The workspace is organized into clean, decoupled **Frontend** and **Backend** modules:
+
+```text
+insightai-–-ai-data-analytics/
+├── frontend/                     # React 19 + TypeScript + Vite Application
+│   ├── src/                      # UI Components, State Management & Hooks
+│   ├── index.html                # Entry point HTML
+│   ├── vite.config.ts            # Vite bundler configuration
+│   ├── tsconfig.json             # TypeScript configuration
+│   ├── server.ts                 # Dev / Production server wrapper
+│   ├── package.json              # Frontend dependencies
+│   └── node_modules/             # Node packages
+│
+├── backend/                      # FastAPI + DuckDB Analytical Engine
+│   ├── main.py                   # FastAPI server entry point
+│   ├── config.py                 # Pydantic Settings & Environment loader
+│   ├── database.py               # SQLite / PostgreSQL persistence layer
+│   ├── routes/                   # API routes (analytics, datasets, intelligence)
+│   ├── services/                 # Business logic, profilers & capability discovery
+│   ├── nl2sql_engine/            # Multi-stage NL2SQL Pipeline (Parser, Resolver, Validator)
+│   ├── tests/                    # Comprehensive Pytest test suite (200+ tests)
+│   ├── requirements.txt          # Python dependencies
+│   └── .venv/                    # Python virtual environment
+│
+├── .env.example                  # Environment configuration template
+├── README.md                     # Project documentation
+└── render.yaml / vercel.json     # Deployment configurations
+```
 
 ---
 
 ## ✨ Core Features
 
-- **🧠 Natural Language to SQL (NL2SQL)**: Ask questions in plain English and instantly get optimized SQL queries executed against your dataset.
-- **🛡️ Hybrid LLM Fallback System**: Seamlessly shifts between Groq (Speed) -> Gemini (Reasoning) -> Local Ollama (Offline capability).
-- **📊 Auto-Visualizations**: Automatically determines the best chart type (bar, line, pie, area) for your query results.
-- **☁️ Supabase Integration**: Cloud PostgreSQL persistence for workspaces, query history, and saved dashboards.
-- **🗂️ Multi-Source Support**: Import data via CSV, Excel, SQLite, or direct PostgreSQL connections.
-- **⚡ In-Memory Engine**: Uses DuckDB/AlaSQL on the backend for lightning-fast analysis of uploaded datasets.
+| Feature | Description |
+| :--- | :--- |
+| **🧠 Precision NL2SQL Engine** | Multi-stage pipeline: Intent Parsing ➔ Schema Grounding ➔ Query IR ➔ SQL Generation ➔ Dry-Run Auto-Repair. |
+| **⚡ DuckDB In-Memory Execution** | Analytical query execution engine capable of scanning millions of rows in milliseconds. |
+| **📊 Smart Auto-Visualizations** | Automated chart type detection (Bar, Line, Area, Scatter, Pie, KPI Cards) based on query semantics. |
+| **🔍 Dataset Profiler & Discovery** | Automatic column classification, data health checks, distribution detection, and capability suggestion. |
+| **📂 Multi-Format Ingestion** | Support for CSV, Excel (`.xlsx`, `.xls`), SQLite, and direct PostgreSQL database connections. |
+| **🔐 Supabase & SQLite Persistence** | Secure multi-tenant workspace state, query history, saved dashboards, and user preferences. |
 
 ---
 
-## 🛠️ Architecture
+## 🛠️ Tech Stack
 
-The project is built on a high-performance modern web stack:
+### **Frontend**
+- **Framework**: React 19 + TypeScript 5.7 + Vite 6
+- **Styling**: Tailwind CSS 4 + Lucide Icons + Framer Motion
+- **Visualization**: Recharts + Custom Canvas Renderers
+- **State & Utilities**: Zustand / React Hooks + TanStack Query
 
-- **Frontend**: React 19, Vite, Tailwind CSS 4, Recharts, Framer Motion.
-- **Backend**: Python, FastAPI, Uvicorn, SQLAlchemy.
-- **AI/LLM Stack**: Groq SDK, Google Generative AI SDK, local `ollama-python`.
+### **Backend**
+- **Core Server**: Python 3.12 + FastAPI + Uvicorn
+- **Engine**: DuckDB 1.1 + Pandas + NumPy + Polars
+- **Persistence**: SQLAlchemy 2 + SQLite / PostgreSQL (Supabase)
+- **AI/LLM Integrations**: Groq SDK + Google GenAI SDK + Ollama API
 
 ---
 
-## 🚀 Getting Started
+## 🚀 Quick Start Guide
 
 ### Prerequisites
 - [Node.js](https://nodejs.org/) (v18+)
-- [Python](https://www.python.org/) (3.10+)
-- [Ollama](https://ollama.ai/) (Optional, for offline fallback)
+- [Python](https://www.python.org/) (v3.10+)
+- [Ollama](https://ollama.ai/) *(Optional, for local offline LLM support)*
 
-### 1. Installation
+---
 
-Clone the repository and install the dependencies:
+### 1. Environment Setup
+
+Copy `.env.example` to `.env` in the root folder:
 
 ```bash
-git clone https://github.com/Nikhil9897/Insight-AI.git
-cd Insight-AI
-
-# Install frontend & Node dependencies
-npm install
-
-# (Optional) The backend Python virtual environment will be created automatically 
-# upon the first run, or you can set it up manually.
-# If setting up manually, install dependencies using:
-# pip install -r backend/requirements-dev.txt
+cp .env.example .env
 ```
 
-### 2. Environment Variables
-
-Rename `.env.example` to `.env` and configure your API keys:
+Configure your LLM provider API keys in `.env`:
 
 ```env
-# LLM Provider Configuration
+# LLM Provider Configuration (groq | gemini | ollama)
 LLM_PROVIDER=groq
-OLLAMA_MODEL=qwen3:8b
+OLLAMA_MODEL=qwen2.5:7b
 OLLAMA_HOST=http://localhost:11434
 
 # API Keys
 GROQ_API_KEY="your_groq_api_key"
 GEMINI_API_KEY="your_gemini_api_key"
 
-# Database
+# Database Persistence
 SUPABASE_DATABASE_URL="postgresql://user:password@host:6543/postgres"
 ```
 
-### 3. Run the App
+---
 
-Start both the Vite frontend and FastAPI backend concurrently:
+### 2. Frontend Setup
+
+Navigate to the `frontend/` directory and install Node dependencies:
 
 ```bash
+cd frontend
+npm install
 npm run dev
 ```
 
-The application will be available at `http://localhost:5173` (or the port specified by Vite), and the API documentation is available at `http://localhost:3000/docs`.
+The frontend will start at **`http://localhost:5173`**.
 
 ---
+
+### 3. Backend Setup
+
+Navigate to the `backend/` directory, set up the virtual environment, and start the FastAPI server:
+
+```bash
+cd backend
+
+# Create virtual environment (if not already present)
+python -m venv .venv
+
+# Activate environment (Windows PowerShell)
+.venv\Scripts\Activate.ps1
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run FastAPI server
+uvicorn main:app --reload --port 8000
+```
+
+The API documentation will be available interactive at **`http://localhost:8000/docs`**.
+
+---
+
+## 🧪 Running Tests
+
+InsightAI includes a complete Pytest test suite covering NL2SQL parsing, schema resolution, and analytical routing:
+
+```bash
+cd backend
+python -m pytest tests/ -v
+```
+
+---
+
 <div align="center">
-<i>Built with ❤️ for AI-Driven Data Analytics.</i>
+
+### 💡 Contributing & License
+
+Contributions are welcome! Please open an issue or pull request to suggest features or fixes.
+
+Distributed under the MIT License. Built with ❤️ for AI-Driven Data Analytics.
+
 </div>

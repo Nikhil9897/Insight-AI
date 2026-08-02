@@ -26,7 +26,7 @@ class NL2SQLEngine:
         query: str,
         available_columns: List[str],
         column_types: Dict[str, str],
-        df_data: Optional[pd.DataFrame] = None,
+        df_data: Optional[Any] = None,
         table_name: str = "df",
         dialect: str = "duckdb"
     ) -> Dict[str, Any]:
