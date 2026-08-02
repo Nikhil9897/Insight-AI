@@ -1,0 +1,10 @@
+{
+  "name": "insightai-root",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix frontend run dev",
+    "build": "cd frontend && npm install && npm run build",
+    "preview": "npm --prefix frontend run preview",
+    "postinstall": "cd frontend && npm install"
+  }
+}
