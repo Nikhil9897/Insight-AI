@@ -376,8 +376,29 @@ class IntentParser:
             q_lower, column_names, matched_columns, column_profiles
         )
 
+        # 7.5 Disambiguate filters vs dimensions:
+        # If a column has an equality filter condition (e.g. Region = 'South'),
+        # it should NOT be treated as a grouping dimension unless explicitly grouped ("by region").
+        filtered_eq_cols = {f.column for f in filters if f.operator in ("eq", "=")}
+        if filtered_eq_cols:
+            clean_dims = []
+            for d in dimensions:
+                if d in filtered_eq_cols:
+                    if re.search(rf"\b(by|per|across|grouped by)\s+{re.escape(d.lower())}\b", q_lower):
+                        clean_dims.append(d)
+                else:
+                    clean_dims.append(d)
+            dimensions = clean_dims
+
+            # If dimensions became empty after removing filter column, pick candidate categorical column if available in query
+            if not dimensions:
+                for c in cat_cols:
+                    if c not in filtered_eq_cols and re.search(rf"\b{re.escape(c.lower())}\b", q_lower):
+                        dimensions.append(c)
+
         # 8. Sort
         sort_spec = self._detect_sort(q_lower, metric, dimensions)
+
 
         # 9. Limit
         limit = self._detect_limit(q_lower)
@@ -803,26 +824,27 @@ class IntentParser:
             if target_col:
                 filters.append(FilterCondition(column=target_col, operator="not_in", value=vals))
 
-        # Equality from sample values (grounding against actual data)
+        # Equality from sample values & distinct values (grounding against actual data)
         if column_profiles:
             seen_cols = {f.column for f in filters}
             for cp in column_profiles:
                 cname = cp.get("name", "")
                 if cname in seen_cols:
                     continue
-                samples = cp.get("sampleValues") or []
+                samples = (cp.get("sampleValues") or []) + (cp.get("distinct_values") or []) + (cp.get("distinctValues") or [])
                 for s in samples:
                     if s is None:
                         continue
                     s_str = str(s).strip()
                     if len(s_str) < 2 or s_str.isdigit():
                         continue
-                    if s_str.lower() in q:
+                    if re.search(rf"\b{re.escape(s_str.lower())}\b", q):
                         filters.append(FilterCondition(
                             column=cname, operator="eq", value=s_str
                         ))
                         seen_cols.add(cname)
                         break
+
 
         # Year / number equality: "in 2023", "for 2022"
         year_match = re.search(r"\b(in|for|during|year)\s+(20\d{2}|19\d{2})\b", q)

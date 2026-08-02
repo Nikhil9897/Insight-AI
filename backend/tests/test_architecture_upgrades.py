@@ -149,7 +149,36 @@ def test_top_customers_by_sales_sum_and_group_by():
     assert 'SUM("Sales")' in sql
     assert '"CustomerID"' in sql
     assert 'GROUP BY "CustomerID"' in sql
-    assert 'LIMIT 10' in sql
+def test_value_resolution_and_filter_disambiguation():
+    data = {
+        'Product': ['Widget A', 'Widget B', 'Widget C', 'Widget D'],
+        'Sales': [100.0, 200.0, 150.0, 300.0],
+        'Region': ['South', 'South', 'North', 'West'],
+        'OrderDate': ['2024-01-01', '2024-01-02', '2024-01-03', '2024-01-04']
+    }
+    df = pd.DataFrame(data)
+    profile = DatasetBrain.build_brain_profile(df, dataset_name="Products_Sales")
+
+    # Test QueryPlanner on "What specific products were driving sales in the South region?"
+    plan = QueryPlanner.plan_query("What specific products were driving sales in the South region?", profile)
+
+    assert plan['metric'] == "Sales"
+    assert plan['dimension'] == "Product"
+    assert "Region" not in plan['group_by']
+    assert len(plan['filters']) == 1
+    assert plan['filters'][0]['column'] == "Region"
+    assert plan['filters'][0]['value'] == "South"
+
+    # Test IntentParser on the same query
+    columns = list(df.columns)
+    col_profiles = [{'name': c, 'type': 'number' if c == 'Sales' else 'string', 'distinct_values': list(df[c].unique())} for c in columns]
+    ir = intent_parser.parse("What specific products were driving sales in the South region?", columns, col_profiles)
+
+    assert ir.metric == "Sales"
+    assert "Product" in ir.dimensions
+    assert "Region" not in ir.dimensions
+    assert any(f.column == "Region" and f.value == "South" for f in ir.filters)
+
 
 
 

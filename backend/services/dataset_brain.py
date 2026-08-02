@@ -103,8 +103,25 @@ class DatasetBrain:
 
         domain, domain_conf = cls.classify_domain(all_roles_list)
 
-        # Build Rich Column Metadata & Categorized Knowledge Graph
+        # Build Rich Column Metadata & Categorized Knowledge Graph with Categorical Value Index
         column_metadata: Dict[str, Dict[str, Any]] = {}
+        value_index: Dict[str, str] = {}
+        distinct_values_map: Dict[str, List[Any]] = {}
+
+        for col_name in df.columns:
+            series = df[col_name].dropna()
+            if not series.empty:
+                uniques = series.unique()
+                d_vals = []
+                for u in uniques:
+                    u_str = str(u).strip()
+                    if u_str and len(u_str) >= 2 and not u_str.isdigit():
+                        d_vals.append(u_str)
+                        u_lower = u_str.lower()
+                        if u_lower not in value_index:
+                            value_index[u_lower] = col_name
+                distinct_values_map[col_name] = d_vals[:100]
+
         for col_name, stats in col_stats.items():
             role = semantic_roles[col_name]
             is_num = stats['is_numeric']
@@ -134,10 +151,14 @@ class DatasetBrain:
 
             column_metadata[col_name] = {
                 'name': col_name,
+                'role': 'metric' if is_num else ('time' if is_dt else 'dimension'),
                 'type': col_type,
                 'business_role': role,
                 'aggregation': agg,
+                'filterable': True,
+                'groupable': not is_num or col_name in time_columns,
                 'sortable': True,
+                'distinct_values': distinct_values_map.get(col_name, []),
             }
 
         # Knowledge Graph: map metrics to categorized dimensions & supported analytical shapes
@@ -173,6 +194,8 @@ class DatasetBrain:
             'semantic_roles': semantic_roles,
             'columns': list(col_stats.keys()),
             'column_metadata': column_metadata,
+            'value_index': value_index,
             'knowledge_graph': knowledge_graph,
         }
+
 

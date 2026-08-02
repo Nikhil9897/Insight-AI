@@ -134,12 +134,38 @@ async def execute_natural_language_query(req: QueryExecutionRequest):
     }
     d_memory = dataset_memory_service.get_or_create_memory(summary_dict, dataset_rows, req.datasetName)
 
-    # Context Layer 2 & 3: Intent Parsing & Query Planning
+    # ── QUERY CLASSIFIER & INTELLIGENT RESPONSE ROUTER ─────────────────────────
+    import pandas as pd
+    from backend.services.response_router import ResponseRouter
+    
+    df_dataset = pd.DataFrame(dataset_rows)
+    routed_res = ResponseRouter.route_query(user_query, df_dataset, req.datasetName or "Dataset")
+
+    if not routed_res.get("requires_sql", True):
+        execution_time_ms = max(1, int((time.time() - start_time) * 1000))
+        return QueryResultResponse(
+            query=user_query,
+            sql=routed_res["sql"],
+            rows=routed_res["rows"],
+            columns=routed_res["columns"],
+            explanation=routed_res["explanation"],
+            chartConfig=ChartConfig(**routed_res["chartConfig"]),
+            businessInsights=routed_res["businessInsights"],
+            agenticLog=[],
+            executionTimeMs=execution_time_ms,
+            timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            confidenceScore=routed_res.get("confidenceScore", 98),
+            executionPath=routed_res.get("executionPath", "DatasetBrain Direct Resolution (No SQL Needed)"),
+            followUpQuestions=routed_res.get("followUpQuestions", []),
+            datasetMemory=routed_res.get("datasetMemory") or d_memory.model_dump(),
+        )
+
+
+    # Context Layer 2 & 3: Intent Parsing & Query Planning for SQL execution path
     t_sem_start = time.time()
     query_plan = query_planner_service.plan_query(user_query, all_columns, columns_profile)
     semantic_mappings = query_plan.semantic_mappings
 
-    # Extract QueryIR from plan (populated by IntentParser)
     current_ir: Optional[QueryIR] = None
     if query_plan.query_ir:
         try:
@@ -161,46 +187,10 @@ async def execute_natural_language_query(req: QueryExecutionRequest):
     t_duck_ms = 0
     t_llm_ms = 0
 
-    # ── METADATA / DATA QUALITY SHORT-CIRCUIT ──────────────────────────────
-    if current_ir and (current_ir.is_metadata or current_ir.is_data_quality):
-        try:
-            meta_sql, meta_explanation = ir_sql_generator.generate(current_ir, all_columns)
-            t_duck_start = time.time()
-            meta_rows, meta_cols = execute_sql_on_data(meta_sql, dataset_rows)
-            t_duck_ms = max(1, int((time.time() - t_duck_start) * 1000))
-            execution_time_ms = max(1, int((time.time() - start_time) * 1000))
-
-            from backend.services.chart_recommender import recommend_chart
-            meta_chart_cfg, meta_chart_exp = recommend_chart(user_query, meta_rows, meta_cols)
-
-            return QueryResultResponse(
-                query=user_query,
-                sql=meta_sql,
-                rows=meta_rows,
-                columns=meta_cols,
-                explanation=meta_explanation,
-                chartConfig=ChartConfig(**meta_chart_cfg),
-                businessInsights=[
-                    f"Data quality query: {current_ir.data_quality_type or 'metadata'}.",
-                    f"Returned {len(meta_rows)} result rows.",
-                    "Query executed deterministically via IR pipeline.",
-                ],
-                agenticLog=[],
-                executionTimeMs=execution_time_ms,
-                timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                confidenceScore=99,
-                executionPath="IR Pipeline — Metadata/Data Quality",
-                datasetMemory=d_memory.model_dump(),
-                semanticMappings=semantic_mappings,
-                queryPlan=query_plan.model_dump(),
-                queryIR=current_ir.model_dump() if current_ir else None,
-            )
-        except Exception as meta_err:
-            logger.warning(f"[Analytics] Metadata query failed: {meta_err}, continuing to normal path.")
-
     # --- PRECISION-FIRST NL2SQL ENGINE ROUTER ---
     t_build_start = time.time()
     col_type_map = {c.get('name', ''): c.get('type', 'string') for c in columns_profile} if columns_profile else {}
+
     
     # Process through Modular NL2SQL Engine
     nl2sql_res = NL2SQLEngine.process(

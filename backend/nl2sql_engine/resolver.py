@@ -115,3 +115,31 @@ class SchemaResolver:
                 notes.append(f"Could not map dimension '{d}' to schema columns.")
 
         return resolved_metrics, resolved_dims, notes
+
+    @classmethod
+    def resolve_value(cls, token: str, value_index: Dict[str, str], column_metadata: Dict[str, Dict[str, Any]]) -> Optional[Tuple[str, str]]:
+        """
+        Resolves a natural language token to (column_name, exact_value) if it matches
+        a categorical distinct value in DatasetBrain / ColumnMetadata.
+        """
+        if not token:
+            return None
+        t_clean = token.strip().lower()
+        
+        # 1. Direct lookup in value_index
+        if t_clean in value_index:
+            col_name = value_index[t_clean]
+            distincts = column_metadata.get(col_name, {}).get('distinct_values', [])
+            exact_val = next((v for v in distincts if str(v).lower() == t_clean), token.capitalize())
+            return col_name, exact_val
+
+        # 2. Check distinct_values inside column_metadata
+        for col_name, meta in column_metadata.items():
+            distincts = meta.get('distinct_values', [])
+            for v in distincts:
+                v_str = str(v).strip()
+                if v_str.lower() == t_clean:
+                    return col_name, v_str
+
+        return None
+

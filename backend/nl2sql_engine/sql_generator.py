@@ -76,17 +76,30 @@ class SQLGenerator:
         # WHERE Clause Filters
         where_parts: List[str] = []
         for f in ir.filters:
-            col = f.get('col')
-            op = f.get('op', '=')
-            val = f.get('val')
+            col = f.get('col') or f.get('column') if isinstance(f, dict) else getattr(f, 'column', None)
+            op = f.get('op') or f.get('operator', '=') if isinstance(f, dict) else getattr(f, 'operator', '=')
+            val = f.get('val') if isinstance(f, dict) and 'val' in f else (f.get('value') if isinstance(f, dict) else getattr(f, 'value', None))
+            
+            if op in ('eq', 'equals'):
+                op = '='
+
             if col and val is not None:
                 q_c = q_ident(col)
-                if isinstance(val, str):
+                if op == 'year_eq':
+                    where_parts.append(f"CAST(SUBSTR(CAST({q_c} AS VARCHAR), 1, 4) AS INT) = {val}")
+                elif op in ('contains', 'like'):
+                    where_parts.append(f"LOWER({q_c}) LIKE LOWER('%{val}%')")
+                elif isinstance(val, str):
                     where_parts.append(f"{q_c} {op} '{val}'")
                 else:
                     where_parts.append(f"{q_c} {op} {val}")
+            elif col and op == 'is_null':
+                where_parts.append(f"{q_ident(col)} IS NULL")
+            elif col and op == 'is_not_null':
+                where_parts.append(f"{q_ident(col)} IS NOT NULL")
 
         where_clause = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
+
 
         # GROUP BY Clause
         group_clause = f"GROUP BY {', '.join(group_by_parts)}" if group_by_parts and ir.metrics else ""
