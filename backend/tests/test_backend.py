@@ -57,7 +57,20 @@ def run_backend_check():
     from backend.main import app
     print(f"12. FastAPI Application '{app.title}' Initialized Successfully")
 
-    print("\n[SUCCESS] ALL BACKEND MODULES AND ROUTERS COMPILED AND INITIALIZED WITH ZERO ERRORS!")
+def test_security_sql_blocking():
+    from backend.services.duckdb_service import execute_sql_on_data
+    import pytest
+    
+    sample_rows = [{"id": 1, "val": 100}]
+    
+    # Verify allowed SELECT works
+    rows, cols = execute_sql_on_data("SELECT * FROM df", sample_rows)
+    assert len(rows) == 1
+
+    # Verify forbidden commands are blocked with Security Alert exception
+    for statement in ["DROP TABLE df", "DELETE FROM df", "COPY df TO 'file.csv'", "PRAGMA version", "INSTALL spatial"]:
+        with pytest.raises(ValueError, match="Security Alert"):
+            execute_sql_on_data(statement, sample_rows)
 
 if __name__ == "__main__":
     run_backend_check()

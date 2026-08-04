@@ -100,6 +100,25 @@ def run_auto_migrations(target_engine):
             except Exception as err:
                 logger.debug(f"Auto-migration note for {table}.{col}: {err}")
 
+        # Security: Automatically enable Row Level Security (RLS) on PostgreSQL / Supabase tables
+        if not is_sqlite:
+            managed_tables = [
+                "users",
+                "projects",
+                "data_sources",
+                "imported_datasets",
+                "query_history",
+                "saved_dashboards",
+                "user_preferences",
+            ]
+            for tbl in managed_tables:
+                try:
+                    conn.execute(text(f"ALTER TABLE IF EXISTS public.{tbl} ENABLE ROW LEVEL SECURITY;"))
+                    conn.execute(text(f"REVOKE ALL ON TABLE public.{tbl} FROM anon;"))
+                    logger.info(f"Supabase Security: Enabled RLS and restricted anonymous access on table 'public.{tbl}'.")
+                except Exception as rls_err:
+                    logger.debug(f"RLS auto-enforcement note for public.{tbl}: {rls_err}")
+
 def get_db():
     """
     FastAPI dependency delivering database session per request.

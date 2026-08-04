@@ -5,6 +5,8 @@ from dotenv import load_dotenv
 # Explicitly load .env file from root project directory
 load_dotenv()
 
+from pydantic import ConfigDict
+
 class Settings(BaseSettings):
     LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "ollama")
     OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen3:8b")
@@ -14,8 +16,6 @@ class Settings(BaseSettings):
     PORT: int = int(os.getenv("PORT", 8000))
     HOST: str = "0.0.0.0"
 
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
+    model_config = ConfigDict(env_file=".env", extra="ignore")
 
 settings = Settings()

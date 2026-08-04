@@ -16,6 +16,13 @@ def execute_sql_on_data(sql: str, dataset_rows: List[Dict[str, Any]]) -> Tuple[L
 
     # 2. Sanitize and normalize table references (convert ?, SalesData, Titanic, dataset -> df)
     normalized_sql = sql.strip()
+
+    # Security check: Ensure SQL contains read-only querying (SELECT / WITH) and block dangerous system calls
+    forbidden_keywords = [r"\bCOPY\b", r"\bATTACH\b", r"\bDETACH\b", r"\bINSTALL\b", r"\bLOAD\b", r"\bPRAGMA\b", r"\bEXPORT\b", r"\bDROP\b", r"\bDELETE\b", r"\bUPDATE\b", r"\bINSERT\b", r"\bALTER\b", r"\bCREATE\b"]
+    for kw in forbidden_keywords:
+        if re.search(kw, normalized_sql, flags=re.IGNORECASE):
+            clean_kw = kw.replace(r"\b", "")
+            raise ValueError(f"Security Alert: Execution of prohibited SQL statement containing '{clean_kw}' is blocked.")
     
     # Replace table names like FROM ? or FROM dataset or FROM SalesData with FROM df
     normalized_sql = re.sub(r'FROM\s+[\?`\'"]?(?:SalesData|Titanic|dataset|table|\?)[\?`\'"]?', 'FROM df', normalized_sql, flags=re.IGNORECASE)
