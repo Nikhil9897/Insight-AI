@@ -4,8 +4,10 @@ response_router.py — Capability-Based Query Response Router
 Routes user queries using the output of QueryUnderstandingEngine:
 1. Direct DatasetBrain / DatasetProfiler resolution for SCHEMA, PROFILE, QUALITY, SUMMARY, and HELP capabilities (No SQL needed, <2ms execution).
 2. Grounded QueryPlanner & NL2SQLEngine SQL pipeline for QUERY and VISUALIZATION capabilities.
+3. LLM-powered conceptual Q&A for OUT_OF_SCOPE / general dataset questions.
 """
 
+import json
 import logging
 import datetime
 from typing import Dict, Any, List, Optional
@@ -253,41 +255,221 @@ class ResponseRouter:
         cls, query: str, brain_profile: Dict[str, Any], understanding: QueryUnderstanding
     ) -> Dict[str, Any]:
         """
-        Handles general/conceptual questions that are not answerable via SQL —
-        e.g. 'mention risks related to the dataset?', 'what are the challenges?'.
-        Returns an explanatory response that guides the user toward data questions.
+        Handles general/conceptual questions about the dataset using the LLM.
+        Instead of refusing, generates a real, informed answer grounded in the
+        DatasetBrain profile — e.g. 'what are the risks?', 'give me insights',
+        'what challenges exist in this data?', 'summarise this dataset'.
+
+        Falls back to a rule-based response if no LLM is available.
         """
         domain = brain_profile.get("domain", "Business Analytics")
         dataset_name = brain_profile.get("dataset_name", "Dataset")
-        metrics = brain_profile.get("metrics", [])
-        dimensions = brain_profile.get("dimensions", [])
+        metrics: List[str] = brain_profile.get("metrics", [])
+        dimensions: List[str] = brain_profile.get("dimensions", [])
+        time_cols: List[str] = brain_profile.get("time_columns", [])
+        row_count: int = brain_profile.get("row_count", 0)
+        col_count: int = brain_profile.get("col_count", 0)
+        col_meta: Dict[str, Any] = brain_profile.get("column_metadata", {})
 
-        explanation = (
-            f"Your question **'{query}'** appears to be a conceptual or general question that "
-            f"I cannot answer directly from the **{dataset_name}** data. \n\n"
-            f"I can help you explore the **{domain}** dataset analytically — for example, you can ask me about "
-            f"trends, totals, averages, rankings, and breakdowns across metrics like "
-            f"{', '.join(metrics[:3]) or 'your available metrics'} and dimensions like "
-            f"{', '.join(dimensions[:3]) or 'your available dimensions'}."
-        )
+        # Build a compact schema summary for the LLM
+        schema_lines = []
+        for col, meta in col_meta.items():
+            role = meta.get("business_role", "Dimension")
+            col_type = meta.get("type", "categorical")
+            cardinality = meta.get("cardinality", 0)
+            examples = meta.get("example_values", [])[:3]
+            schema_lines.append(
+                f"  - {col} ({col_type}, {role}) — {cardinality} distinct values, e.g. {examples}"
+            )
+        schema_block = "\n".join(schema_lines) if schema_lines else "  (no column metadata)"
+
+        llm_answer: Optional[str] = None
+        insights: List[str] = []
+
+        # ── Try LLM-powered conceptual answer ─────────────────────────────────
+        try:
+            from backend.services.llm_service import generate_llm_content_with_fallback
+            from backend.config import settings
+
+            has_llm = bool(
+                settings.LLM_PROVIDER == "ollama"
+                or settings.GROQ_API_KEY
+                or settings.GEMINI_API_KEY
+            )
+
+            if has_llm:
+                prompt = f"""You are an expert Data Analyst and Chief Data Officer.
+
+A user has asked a general or conceptual question about the following dataset.
+Answer the question directly and helpfully using your knowledge of the dataset's structure and domain.
+Do NOT say you cannot answer. Provide a substantive, structured answer.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DATASET: {dataset_name}
+DOMAIN:  {domain}
+SIZE:    {row_count:,} rows × {col_count} columns
+
+COLUMN SCHEMA:
+{schema_block}
+
+METRICS  (numeric): {json.dumps(metrics)}
+DIMENSIONS (categorical): {json.dumps(dimensions)}
+TIME COLUMNS: {json.dumps(time_cols)}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+USER QUESTION: "{query}"
+
+Answer the question in a helpful, structured way:
+- Use bullet points or numbered lists where appropriate.
+- Ground your answer in the actual dataset schema above (mention real column names).
+- Be specific — do not give generic advice.
+- Keep your answer under 300 words.
+- Do NOT suggest the user ask a different question — answer this one.
+
+Return ONLY valid JSON with this structure:
+{{
+  "answer": "Your full structured answer here (plain text with \\n for line breaks)",
+  "key_points": ["Point 1", "Point 2", "Point 3"],
+  "suggested_follow_ups": ["Analytical question 1", "Analytical question 2", "Analytical question 3"]
+}}"""
+
+                raw = generate_llm_content_with_fallback(prompt)
+                parsed = json.loads(raw)
+                llm_answer = parsed.get("answer", "")
+                insights = parsed.get("key_points", [])
+                follow_ups = parsed.get("suggested_follow_ups", [])
+                logger.info(f"[ResponseRouter] LLM answered conceptual query: '{query[:60]}'")
+
+        except Exception as llm_err:
+            logger.warning(f"[ResponseRouter] LLM conceptual Q&A failed: {llm_err}")
+            llm_answer = None
+            follow_ups = []
+
+        # ── Rule-based fallback if LLM unavailable ────────────────────────────
+        if not llm_answer:
+            llm_answer = _rule_based_conceptual_answer(query, dataset_name, domain, metrics, dimensions, col_meta, row_count)
+            insights = [
+                f"Dataset domain: {domain} with {row_count:,} records.",
+                f"Key metrics: {', '.join(metrics[:4]) or 'none detected'}.",
+                f"Key dimensions: {', '.join(dimensions[:4]) or 'none detected'}.",
+            ]
+            follow_ups = [
+                f"Show total {metrics[0]} by {dimensions[0]}" if metrics and dimensions else "Show me a summary of the data",
+                f"What are the top 10 records by {metrics[0]}?" if metrics else "Show me the first 10 rows",
+                f"Monthly trend of {metrics[0]}" if metrics and time_cols else "Show distribution of key metrics",
+            ]
 
         return {
             "capability": Capability.OUT_OF_SCOPE.value,
-            "query_type": Capability.OUT_OF_SCOPE.value,
+            "query_type": "CONCEPTUAL_QA",
             "requires_sql": False,
             "query": query,
-            "sql": "-- No SQL generated (Question is conceptual / out-of-scope for data analytics)",
+            "sql": "-- No SQL needed (Conceptual question answered via DatasetBrain + LLM)",
             "rows": [],
             "columns": [],
-            "explanation": explanation,
-            "chartConfig": {"type": "table", "title": "Out of Scope"},
-            "businessInsights": [
-                f"This question is not directly answerable from the '{dataset_name}' data.",
-                "Try asking analytical questions like: 'What are the top customers by sales?' or 'Show monthly trends'.",
-                f"Dataset domain: {domain} | Metrics: {', '.join(metrics[:3])}"
-            ],
+            "explanation": llm_answer,
+            "chartConfig": {"type": "table", "xAxisKey": "", "yAxisKey": "", "title": "Dataset Insights"},
+            "businessInsights": insights,
             "confidenceScore": int(understanding.confidence * 100),
-            "executionPath": "Out-of-Scope Detection — No SQL Execution",
-            "followUpQuestions": understanding.clarification_suggestions,
+            "executionPath": "LLM Conceptual Q&A — DatasetBrain Context (No SQL)",
+            "followUpQuestions": follow_ups,
             "datasetMemory": brain_profile,
         }
+
+
+def _rule_based_conceptual_answer(
+    query: str,
+    dataset_name: str,
+    domain: str,
+    metrics: List[str],
+    dimensions: List[str],
+    col_meta: Dict[str, Any],
+    row_count: int,
+) -> str:
+    """
+    Generates a structured conceptual answer without an LLM.
+    Detects the question intent (risks, insights, summary, challenges, etc.)
+    and builds a relevant response from the DatasetBrain profile.
+    """
+    q = query.lower()
+
+    # Detect what kind of conceptual question this is
+    is_risk = any(k in q for k in ["risk", "risks", "danger", "threat", "concern", "issue"])
+    is_insight = any(k in q for k in ["insight", "insights", "pattern", "tell me", "what do"])
+    is_challenge = any(k in q for k in ["challenge", "challenges", "problem", "difficulty"])
+    is_summary = any(k in q for k in ["summary", "summarise", "summarize", "overview", "describe"])
+    is_quality = any(k in q for k in ["quality", "clean", "missing", "null", "incomplete"])
+
+    m_list = ", ".join(metrics[:4]) or "numerical measures"
+    d_list = ", ".join(dimensions[:4]) or "categorical dimensions"
+
+    if is_risk:
+        return (
+            f"**Risk Factors in the '{dataset_name}' Dataset ({domain}):**\n\n"
+            f"Based on the dataset structure, here are potential risk considerations:\n\n"
+            f"1. **Data Completeness Risk** — With {row_count:,} records, any missing values "
+            f"in key metrics ({m_list}) could skew aggregate results.\n"
+            f"2. **Outlier Sensitivity** — Metrics like {m_list} may contain extreme outliers "
+            f"that distort averages and totals — always check MIN/MAX ranges.\n"
+            f"3. **Dimension Cardinality Risk** — High-cardinality dimensions "
+            f"(many unique values) can fragment analysis and produce thin segments.\n"
+            f"4. **Temporal Coverage** — If the dataset has a narrow date range, "
+            f"trend analysis may not represent long-term patterns reliably.\n"
+            f"5. **Aggregation Mismatch** — Summing percentage-based columns (like discount rates) "
+            f"rather than averaging them is a common analytical error.\n\n"
+            f"*Tip: Ask me analytical questions to quantify these risks — e.g. "
+            f"'Show missing value count per column' or 'What are the top outliers in {metrics[0] if metrics else 'Sales'}?'*"
+        )
+
+    if is_challenge:
+        return (
+            f"**Key Challenges with the '{dataset_name}' Dataset:**\n\n"
+            f"1. **Cross-dimensional Analysis** — Combining metrics ({m_list}) "
+            f"across multiple dimensions ({d_list}) simultaneously can become complex.\n"
+            f"2. **Time-based Comparison** — Period-over-period comparisons require "
+            f"careful date range alignment to avoid misleading results.\n"
+            f"3. **Attribution** — Determining which dimension drives the most "
+            f"impact on a metric often requires multi-variable analysis.\n"
+            f"4. **Data Granularity** — Row-level data with {row_count:,} records may need "
+            f"grouping/aggregation to surface meaningful patterns."
+        )
+
+    if is_quality:
+        return (
+            f"**Data Quality Assessment for '{dataset_name}':**\n\n"
+            f"To fully assess data quality, I recommend asking:\n"
+            f"- 'Show null/missing value count per column'\n"
+            f"- 'Show duplicate record count'\n"
+            f"- 'What are the minimum and maximum values of {metrics[0] if metrics else 'each metric'}?'\n\n"
+            f"From the schema analysis:\n"
+            f"- {len(metrics)} numeric metric columns detected: {m_list}\n"
+            f"- {len(dimensions)} categorical dimension columns: {d_list}\n"
+            f"- {row_count:,} total records loaded\n\n"
+            f"*Ask me 'show data quality report' for a detailed breakdown.*"
+        )
+
+    if is_insight or is_summary:
+        return (
+            f"**'{dataset_name}' Dataset Overview ({domain}):**\n\n"
+            f"- **Size:** {row_count:,} records\n"
+            f"- **Key Metrics (numeric):** {m_list}\n"
+            f"- **Key Dimensions (categorical):** {d_list}\n\n"
+            f"**What this dataset can tell you:**\n"
+            f"- Performance rankings (e.g. top segments by {metrics[0] if metrics else 'value'})\n"
+            f"- Trend analysis over time\n"
+            f"- Cross-dimensional breakdowns and comparisons\n"
+            f"- Distribution and outlier detection\n\n"
+            f"*Ask me any analytical question to start exploring.*"
+        )
+
+    # Generic fallback
+    return (
+        f"**About the '{dataset_name}' Dataset:**\n\n"
+        f"Domain: {domain} | Records: {row_count:,}\n"
+        f"Metrics: {m_list}\n"
+        f"Dimensions: {d_list}\n\n"
+        f"This is a {domain.lower()} dataset. You can ask me analytical questions about "
+        f"trends, totals, rankings, and breakdowns across these columns.\n\n"
+        f"*For conceptual questions about risks, challenges, or insights, I can provide "
+        f"a dataset-aware analysis — just ask!*"
+    )
