@@ -50,8 +50,9 @@ else:
         "http://localhost:8000",
         "http://127.0.0.1:8000",
     ]
-    if os.getenv("APP_URL"):
-        allowed_origins.append(os.getenv("APP_URL").strip())
+    app_url = os.getenv("APP_URL")
+    if app_url:
+        allowed_origins.append(app_url.strip())
 
 app.add_middleware(
     CORSMiddleware,

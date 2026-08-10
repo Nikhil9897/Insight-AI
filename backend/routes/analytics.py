@@ -225,22 +225,98 @@ async def execute_natural_language_query(req: QueryExecutionRequest):
         except Exception as build_err:
             logger.info(f"[NL2SQL Engine] Dry-run SQL execution failed ({build_err}), falling back to LLM Recovery...")
 
-    # PATH B: Low Confidence / Complex NLP Fallback (LLM Agentic Recovery Loop)
+    # ── PATH B: Three-Tier Confidence Routing ─────────────────────────────────
+    # Tier 1 (conf ≥ 0.90): NL2SQL Engine result is trusted — already succeeded above.
+    # Tier 2 (conf 0.60–0.90): Run semantic validation to auto-correct the IR,
+    #         then re-try deterministic SQL before escalating to LLM.
+    # Tier 3 (conf < 0.60): LLM IR Refiner with rich DatasetBrain context + few-shot examples.
+
     if not execution_success:
+        from backend.services.semantic_validator import SemanticValidator
+        from backend.services.few_shot_examples import get_few_shot_examples
+        from backend.services.dataset_brain import DatasetBrain
+
         execution_path = "LLM IR Refiner → IR Deterministic SQL"
         has_llm = bool(settings.LLM_PROVIDER == "ollama" or settings.GROQ_API_KEY or settings.GEMINI_API_KEY)
         last_error = ""
 
-        if has_llm:
+        # Build a full DatasetBrain profile for context (used by both Tier 2 and Tier 3)
+        df_dataset = pd.DataFrame(dataset_rows)
+        brain_profile = DatasetBrain.build_brain_profile(df_dataset, dataset_name=req.datasetName or "Dataset")
+        value_index: dict = brain_profile.get("value_index", {})
+        col_meta: dict = brain_profile.get("column_metadata", {})
+
+        # ── TIER 2: Semantic Validation Auto-Correction ────────────────────────
+        if current_ir and current_ir.confidence >= 0.60:
+            val_result = SemanticValidator.validate(current_ir, brain_profile)
+            if val_result.is_valid and val_result.corrected_ir:
+                # Use the auto-corrected IR
+                corrected_ir_t2 = val_result.corrected_ir
+                try:
+                    corrected_sql_t2, _ = ir_sql_generator.generate(corrected_ir_t2, all_columns)
+                    res_rows_t2, res_cols_t2 = execute_sql_on_data(corrected_sql_t2, dataset_rows)
+                    if res_rows_t2 is not None and len(res_rows_t2) > 0:
+                        current_sql = corrected_sql_t2
+                        query_result_rows = res_rows_t2
+                        execution_success = True
+                        current_ir = corrected_ir_t2
+                        execution_path = "Semantic Validator Auto-Correction → Deterministic SQL"
+                        agentic_log.append(AgenticAttempt(
+                            attemptNumber=1,
+                            generatedSql=current_sql,
+                            status="success",
+                            reflectionNote=f"SemanticValidator auto-corrected IR. Warnings: {'; '.join(val_result.warnings)}"
+                        ))
+                        logger.info(f"[Tier2] SemanticValidator correction succeeded.")
+                except Exception as t2_err:
+                    logger.info(f"[Tier2] SemanticValidator correction failed ({t2_err}), escalating to LLM.")
+
+        # ── TIER 3: LLM IR Refiner with Rich Context ──────────────────────────
+        if not execution_success and has_llm:
             t_llm_start = time.time()
 
-            # Serialise the current IR for the LLM context
+            # Build compact schema block for LLM — semantic roles + sample values per column
+            schema_lines = []
+            for col in all_columns:
+                meta = col_meta.get(col, {})
+                role = meta.get("business_role", "Dimension")
+                col_type = meta.get("type", "categorical")
+                agg = meta.get("aggregation", "NONE")
+                examples = meta.get("example_values", [])[:4]
+                ex_str = f" | samples: {examples}" if examples else ""
+                schema_lines.append(
+                    f"  - {col}: {col_type} [{role}] default_agg={agg}{ex_str}"
+                )
+            schema_block = "\n".join(schema_lines)
+
+            # Build value_index block — shows LLM which words map to which columns
+            vi_lines = []
+            for val, col in list(value_index.items())[:40]:  # cap at 40 entries
+                vi_lines.append(f'  "{val}" → {col}')
+            value_index_block = "\n".join(vi_lines) if vi_lines else "  (none)"
+
+            # Build per-field confidence hints to guide LLM correction focus
+            field_conf_block = ""
+            if current_ir:
+                field_conf_block = (
+                    f"\nPer-field confidence (fields < 0.80 need correction):\n"
+                    f"  intent={current_ir.intent_confidence:.2f}  "
+                    f"metric={current_ir.metric_confidence:.2f}  "
+                    f"dimension={current_ir.dimension_confidence:.2f}  "
+                    f"filter={current_ir.filter_confidence:.2f}"
+                )
+
+            # Serialise current IR (strip large/noisy fields)
             current_ir_dict = current_ir.model_dump() if current_ir else {}
-            # Strip large fields to keep the prompt concise
             ir_for_prompt = {
                 k: v for k, v in current_ir_dict.items()
-                if k not in ("raw_query", "confidence_flags", "matched_columns")
+                if k not in ("raw_query", "confidence_flags", "matched_columns",
+                             "intent_confidence", "metric_confidence",
+                             "dimension_confidence", "filter_confidence")
             }
+
+            # Domain-adaptive few-shot examples
+            few_shot_block = get_few_shot_examples(brain_profile, max_examples=3)
 
             for attempt in range(1, 4):
                 error_context = (
@@ -248,19 +324,39 @@ async def execute_natural_language_query(req: QueryExecutionRequest):
                     if attempt > 1 else ""
                 )
 
-                # ── CRITICAL: LLM returns a corrected IR, NOT SQL ──────────
-                prompt = f"""You are an expert Query Intent Analyst.
-Your ONLY job is to correct a structured Query Intent JSON (IR).
-Do NOT write SQL. The SQL will be generated deterministically from the corrected IR.
+                # ── Rich DatasetBrain-Aware IR Refiner Prompt ──────────────
+                prompt = f"""You are an expert Query Intent Analyst for the InsightAI analytics platform.
+Your ONLY job is to produce a corrected QueryIR (Intermediate Representation) JSON.
+Do NOT write SQL. SQL is generated deterministically from the IR you return.
 
-Dataset Schema Columns: {json.dumps(all_columns)}
-Numerical Columns (metrics): {json.dumps([c for c in all_columns if any(k in c.lower() for k in ['sales','amount','price','cost','revenue','profit','quantity','salary','score','rate','fare','fee','marks','units'])])}
-Categorical Columns (dimensions): {json.dumps([c for c in all_columns if not any(k in c.lower() for k in ['date','month','year','time','timestamp'])])[:400]}
-Dataset Context: {d_memory.business_summary}
-User Query: "{user_query}"
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DATASET: {brain_profile.get('dataset_name', 'Dataset')}
+DOMAIN:  {brain_profile.get('domain', 'General Analytics')}
+ROWS:    {brain_profile.get('row_count', '?')} | COLUMNS: {brain_profile.get('col_count', '?')}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+COLUMN SCHEMA (name: type [role] default_agg | sample values):
+{schema_block}
+
+METRICS  (numeric, aggregatable): {json.dumps(brain_profile.get('metrics', []))}
+DIMENSIONS (categorical, groupable): {json.dumps(brain_profile.get('dimensions', []))}
+TIME COLUMNS: {json.dumps(brain_profile.get('time_columns', []))}
+
+CATEGORICAL VALUE INDEX (word in query → column it belongs to):
+{value_index_block}
+
+Use the value index to resolve filter values. For example, if the query contains "South"
+and "south" → "Region" in the index, produce: {{"column": "Region", "operator": "eq", "value": "South"}}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{few_shot_block}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+USER QUERY: "{user_query}"
+{field_conf_block}
 {conv_context}
 
-Current IR (may be incorrect or low-confidence):
+CURRENT IR (may be incorrect or low-confidence — correct it):
 {json.dumps(ir_for_prompt, indent=2)}
 {error_context}
 
@@ -268,30 +364,30 @@ RETURN ONLY a corrected JSON IR with these exact fields:
 {{
   "intent": "aggregation|ranking|filter|trend|distribution|statistical|comparison",
   "aggregation": "SUM|AVG|COUNT|MIN|MAX|COUNT_DISTINCT|null",
-  "metric": "<exact column name from schema or null>",
+  "metric": "<exact column name from COLUMN SCHEMA above or null>",
   "metrics": [],
-  "dimensions": ["<exact column names from schema>"],
-  "filters": [],
+  "dimensions": ["<exact column names from COLUMN SCHEMA above>"],
+  "filters": [{{"column": "<col>", "operator": "eq|gt|lt|gte|lte|between|contains|in", "value": "<val>"}}],
   "sort": {{"column": "<column>", "direction": "ASC|DESC"}} or null,
   "limit": <number or null>,
   "time_filter": null,
   "time_granularity": "day|week|month|quarter|year|null",
+  "time_dimension": "<date column or null>",
   "statistical_function": null,
   "chart": "kpi|bar|line|scatter|pie|histogram|heatmap|treemap|table",
   "confidence": 0.95,
   "confidence_flags": [],
-  "raw_query": "{user_query}",
-  "matched_columns": {{}},
   "is_data_quality": false,
   "is_metadata": false,
   "data_quality_type": null,
-  "reflectionNote": "One sentence explaining what you corrected."
+  "reflectionNote": "One sentence explaining what you corrected and why."
 }}
 
-RULES:
-1. Only use column names that exist exactly in the dataset schema.
-2. Do NOT write any SQL.
-3. Return ONLY valid JSON."""
+STRICT RULES:
+1. ONLY use column names that exist exactly in COLUMN SCHEMA above — no invention.
+2. Use the CATEGORICAL VALUE INDEX to ground filter values to the correct column.
+3. Do NOT write any SQL.
+4. Return ONLY valid JSON — no markdown, no explanation outside the JSON."""
 
                 try:
                     llm_res = generate_llm_content_with_fallback(prompt)
@@ -300,7 +396,17 @@ RULES:
 
                     # Reconstruct a corrected QueryIR from LLM output
                     corrected_ir = QueryIR(**{k: v for k, v in parsed.items() if k in QueryIR.model_fields})
-                    current_ir = corrected_ir  # Update for downstream explainability
+
+                    # Run semantic validation on the LLM output before compiling SQL
+                    val_check = SemanticValidator.validate(corrected_ir, brain_profile)
+                    if not val_check.is_valid:
+                        raise ValueError(
+                            f"LLM IR failed semantic validation: {'; '.join(val_check.errors)}"
+                        )
+                    if val_check.corrected_ir:
+                        corrected_ir = val_check.corrected_ir  # use auto-corrected version
+
+                    current_ir = corrected_ir
 
                     # Compile SQL from the corrected IR (never from LLM output directly)
                     corrected_sql, corrected_explanation = ir_sql_generator.generate(
@@ -318,7 +424,7 @@ RULES:
                         attemptNumber=attempt,
                         generatedSql=current_sql,
                         status="success",
-                        reflectionNote=f"LLM IR Refiner → Deterministic SQL: {reflection_note}"
+                        reflectionNote=f"LLM IR Refiner (rich context) → Deterministic SQL: {reflection_note}"
                     ))
                     logger.info(f"[LLM IR Refiner] Attempt {attempt} succeeded. SQL: {current_sql[:80]}")
                     break
@@ -332,6 +438,7 @@ RULES:
                         reflectionNote=f"IR Refiner attempt {attempt} failed: {last_error}"
                     ))
             t_llm_ms = max(1, int((time.time() - t_llm_start) * 1000))
+
 
     # Local Rule-Engine Fallback if both Path A and Path B fail
     if not execution_success or not query_result_rows:

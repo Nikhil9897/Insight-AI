@@ -58,6 +58,9 @@ class ResponseRouter:
         elif cap == Capability.SUMMARY:
             return cls._handle_summary(user_query, brain_profile, understanding)
 
+        elif cap == Capability.OUT_OF_SCOPE:
+            return cls._handle_out_of_scope(user_query, brain_profile, understanding)
+
         # Default: QUERY / VISUALIZATION (requires SQL execution via QueryPlanner / NL2SQLEngine)
         return {
             "capability": cap.value,
@@ -241,6 +244,50 @@ class ResponseRouter:
             ],
             "confidenceScore": int(understanding.confidence * 100),
             "executionPath": "DatasetBrain Direct Resolution — Executive Overview (No SQL Needed)",
+            "followUpQuestions": understanding.clarification_suggestions,
+            "datasetMemory": brain_profile,
+        }
+
+    @classmethod
+    def _handle_out_of_scope(
+        cls, query: str, brain_profile: Dict[str, Any], understanding: QueryUnderstanding
+    ) -> Dict[str, Any]:
+        """
+        Handles general/conceptual questions that are not answerable via SQL —
+        e.g. 'mention risks related to the dataset?', 'what are the challenges?'.
+        Returns an explanatory response that guides the user toward data questions.
+        """
+        domain = brain_profile.get("domain", "Business Analytics")
+        dataset_name = brain_profile.get("dataset_name", "Dataset")
+        metrics = brain_profile.get("metrics", [])
+        dimensions = brain_profile.get("dimensions", [])
+
+        explanation = (
+            f"Your question **'{query}'** appears to be a conceptual or general question that "
+            f"I cannot answer directly from the **{dataset_name}** data. \n\n"
+            f"I can help you explore the **{domain}** dataset analytically — for example, you can ask me about "
+            f"trends, totals, averages, rankings, and breakdowns across metrics like "
+            f"{', '.join(metrics[:3]) or 'your available metrics'} and dimensions like "
+            f"{', '.join(dimensions[:3]) or 'your available dimensions'}."
+        )
+
+        return {
+            "capability": Capability.OUT_OF_SCOPE.value,
+            "query_type": Capability.OUT_OF_SCOPE.value,
+            "requires_sql": False,
+            "query": query,
+            "sql": "-- No SQL generated (Question is conceptual / out-of-scope for data analytics)",
+            "rows": [],
+            "columns": [],
+            "explanation": explanation,
+            "chartConfig": {"type": "table", "title": "Out of Scope"},
+            "businessInsights": [
+                f"This question is not directly answerable from the '{dataset_name}' data.",
+                "Try asking analytical questions like: 'What are the top customers by sales?' or 'Show monthly trends'.",
+                f"Dataset domain: {domain} | Metrics: {', '.join(metrics[:3])}"
+            ],
+            "confidenceScore": int(understanding.confidence * 100),
+            "executionPath": "Out-of-Scope Detection — No SQL Execution",
             "followUpQuestions": understanding.clarification_suggestions,
             "datasetMemory": brain_profile,
         }

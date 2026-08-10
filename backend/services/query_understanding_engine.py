@@ -26,6 +26,7 @@ class Capability(str, Enum):
     QUERY = "QUERY"             # Data analytics query requiring SQL execution
     VISUALIZATION = "VISUALIZATION" # Explicit chart/graph generation
     HELP = "HELP"               # Conversational greetings & assistant capabilities
+    OUT_OF_SCOPE = "OUT_OF_SCOPE"   # Conceptual/general questions not answerable via SQL
     # Extensible for future: EXPORT, DASHBOARD, FORECAST, ANOMALY_DETECTION
 
 
@@ -87,6 +88,17 @@ _QUALITY_TERMS = ["missing", "null", "blank", "duplicates", "quality", "data qua
 _SUMMARY_TERMS = ["explain", "describe", "summarize", "overview", "what is this dataset"]
 _HELP_TERMS = ["hello", "hi", "hey", "help", "thanks", "thank you", "who are you"]
 _VIZ_TERMS = ["chart", "graph", "plot", "pie", "bar chart", "line chart", "histogram", "scatter plot", "donut"]
+
+# Signals that a question is conceptual/general — NOT a data query answerable by SQL.
+# These are intentionally specific to avoid false positives on real analytics queries.
+_OUT_OF_SCOPE_SIGNALS = [
+    "risk", "risks", "advice", "suggest", "recommendation", "predict", "forecast",
+    "opinion", "why", "what should", "how should", "what do you think",
+    "tell me about", "explain to me", "can you explain", "what are the",
+    "disadvantages", "advantages", "pros", "cons", "best practice",
+    "limitation", "limitations", "concern", "concerns", "issue", "issues",
+    "problem", "problems", "challenge", "challenges",
+]
 
 
 class QueryUnderstandingEngine:
@@ -169,8 +181,12 @@ class QueryUnderstandingEngine:
 
         has_ranking = bool(re.search(r'\b(top|first|highest|best|worst|rank|driving)\b', q_lower))
 
-        # Metric & Dimension Fallbacks
-        if not detected_metrics and metrics_schema:
+        # Metric & Dimension Fallbacks — only inject defaults when there is clear analytical intent.
+        # Unconditional injection previously caused conceptual questions to score as QUERY.
+        has_clear_analytical_intent = has_explicit_grouping or has_ranking or bool(
+            re.search(r'\b(show|compare|total|sum|average|count|trend|distribution)\b', q_lower)
+        )
+        if not detected_metrics and metrics_schema and has_clear_analytical_intent:
             detected_metrics.append(metrics_schema[0])
             reasoning.append(f"Defaulted primary metric to '{metrics_schema[0]}'.")
 
@@ -211,6 +227,7 @@ class QueryUnderstandingEngine:
             Capability.HELP: 0.0,
             Capability.VISUALIZATION: 0.0,
             Capability.QUERY: 0.0,
+            Capability.OUT_OF_SCOPE: 0.0,
         }
 
         # Signal A: Schema / Columns terms
@@ -234,6 +251,7 @@ class QueryUnderstandingEngine:
             scores[Capability.VISUALIZATION] += 0.70
 
         # Signal F: QUERY (Analytical multi-signal score accumulation)
+        # Only counts metrics/dims that were explicitly mentioned in the query (no fallback defaults).
         query_score = 0.0
         if detected_metrics:
             query_score += 0.35
@@ -245,18 +263,29 @@ class QueryUnderstandingEngine:
             query_score += 0.15
         if time_gran:
             query_score += 0.15
-
         scores[Capability.QUERY] = min(0.99, query_score)
+
+        # Signal G: OUT_OF_SCOPE — conceptual / general question, not answerable via SQL.
+        # Boost if out-of-scope terms are present AND no strong column grounding found.
+        oos_keyword_hit = any(kw in q_lower for kw in _OUT_OF_SCOPE_SIGNALS)
+        has_column_grounding = bool(detected_metrics or detected_dims or detected_filters)
+        if oos_keyword_hit and not has_column_grounding:
+            scores[Capability.OUT_OF_SCOPE] += 0.80
+            reasoning.append("Out-of-scope signal detected with no column grounding — routing to OUT_OF_SCOPE.")
+        elif oos_keyword_hit:
+            # Conceptual word present but some column grounding exists — penalise QUERY slightly
+            scores[Capability.QUERY] = max(0.0, scores[Capability.QUERY] - 0.15)
+            reasoning.append("Out-of-scope signal present alongside column grounding — QUERY score penalised.")
 
         # Select Winner Capability based on maximum score
         winner_cap = max(scores.keys(), key=lambda k: scores[k])
         win_score = round(scores[winner_cap], 2)
 
-
-        # If winner score is too low, default to QUERY with low confidence
+        # If winner score is too low, default to OUT_OF_SCOPE (safer than blindly running SQL)
         if win_score < 0.30:
-            winner_cap = Capability.QUERY
+            winner_cap = Capability.OUT_OF_SCOPE
             win_score = 0.50
+            reasoning.append("Low overall confidence — defaulting to OUT_OF_SCOPE (no SQL execution).")
 
         requires_sql = winner_cap in (Capability.QUERY, Capability.VISUALIZATION)
         reasoning.append(f"Capability scoring winner: {winner_cap.value} (score={win_score:.2f}).")

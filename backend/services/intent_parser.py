@@ -88,9 +88,13 @@ class QueryIR(BaseModel):
     # Visualization
     chart: Optional[str] = None   # kpi | bar | line | scatter | pie | histogram | heatmap | treemap
 
-    # Confidence
+    # Confidence — overall + per-field for selective LLM escalation
     confidence: float = 1.0
     confidence_flags: List[str] = []
+    intent_confidence: float = 1.0        # How certain is the intent classification?
+    metric_confidence: float = 1.0        # How certain is the metric resolution?
+    dimension_confidence: float = 1.0     # How certain are the dimensions?
+    filter_confidence: float = 1.0        # How certain are the filter values?
 
     # Raw info (for explainability)
     raw_query: str = ""
@@ -314,12 +318,24 @@ class IntentParser:
         query: str,
         column_names: List[str],
         column_profiles: Optional[List[Dict[str, Any]]] = None,
+        value_index: Optional[Dict[str, str]] = None,
     ) -> QueryIR:
         """
         Main entry point. Returns a fully populated QueryIR.
+
+        Args:
+            query:           Natural language user query.
+            column_names:    List of actual column names from the dataset.
+            column_profiles: Optional per-column type/stats metadata.
+            value_index:     Optional {lowercase_value: column_name} map from
+                             DatasetBrain for grounding filter values (e.g.
+                             {"south": "Region", "consumer": "Segment"}).
         """
         q = query.strip()
         q_lower = q.lower()
+
+        # Store value_index for use in filter detection
+        self._value_index: Dict[str, str] = value_index or {}
 
         # 1. Semantic column matching
         matched_columns, num_cols, cat_cols, date_cols = self._match_columns(
@@ -425,8 +441,8 @@ class IntentParser:
             intent, dimensions, date_cols, time_granularity, limit, q_lower
         )
 
-        # 13. Confidence Scoring
-        confidence, flags = self._score_confidence(
+        # 13. Confidence Scoring — overall + per-field
+        confidence, flags, per_field = self._score_confidence(
             intent, aggregation, metric, dimensions, filters, column_names, num_cols, cat_cols, q_lower
         )
 
@@ -466,6 +482,10 @@ class IntentParser:
             chart=chart,
             confidence=round(confidence, 3),
             confidence_flags=flags,
+            intent_confidence=round(per_field.get("intent", 1.0), 3),
+            metric_confidence=round(per_field.get("metric", 1.0), 3),
+            dimension_confidence=round(per_field.get("dimension", 1.0), 3),
+            filter_confidence=round(per_field.get("filter", 1.0), 3),
             raw_query=q,
             matched_columns=matched_columns,
         )
@@ -845,6 +865,39 @@ class IntentParser:
                         seen_cols.add(cname)
                         break
 
+        # ── Value-Index Grounding (DatasetBrain value_index) ──────────────────
+        # Ground query tokens against DatasetBrain's pre-built value_index.
+        # e.g. "south" → {"south": "Region"} → FilterCondition(Region, eq, "South")
+        # This is the primary mechanism for accurate filter grounding without LLM.
+        if hasattr(self, "_value_index") and self._value_index:
+            seen_cols = {f.column for f in filters}
+            words = re.findall(r"[a-zA-Z][a-zA-Z0-9_-]*", q)
+
+            # Build candidates: single words + adjacent 2-word and 3-word phrases
+            candidates: List[str] = list(words)
+            for i in range(len(words) - 1):
+                candidates.append(words[i] + " " + words[i + 1])
+            for i in range(len(words) - 2):
+                candidates.append(words[i] + " " + words[i + 1] + " " + words[i + 2])
+
+            # Sort longest-first so multi-word values are checked before substrings
+            candidates = sorted(set(candidates), key=len, reverse=True)
+
+            for tok in candidates:
+                tok_lower = tok.strip().lower()
+                if len(tok_lower) < 2:
+                    continue
+                target_col = self._value_index.get(tok_lower)
+                if target_col and target_col not in seen_cols and target_col in all_cols:
+                    # Confirm the token appears as a whole word in the query
+                    if re.search(rf"\b{re.escape(tok_lower)}\b", q):
+                        filters.append(FilterCondition(
+                            column=target_col, operator="eq", value=tok.strip().title()
+                        ))
+                        seen_cols.add(target_col)
+                        logger.debug(
+                            f"[IntentParser] value_index grounded: '{tok}' → {target_col}='{tok.strip().title()}'"
+                        )
 
         # Year / number equality: "in 2023", "for 2022"
         year_match = re.search(r"\b(in|for|during|year)\s+(20\d{2}|19\d{2})\b", q)
@@ -856,6 +909,7 @@ class IntentParser:
                 filters.append(FilterCondition(column=date_col, operator="year_eq", value=year_val))
 
         return filters
+
 
     def _guess_numeric_filter_col(
         self, q: str, all_cols: List[str], matched: Dict[str, str]
@@ -1020,8 +1074,6 @@ class IntentParser:
 
     # ------------------------------------------------------------------
     # 13. Confidence Scoring
-    # ------------------------------------------------------------------
-
     def _score_confidence(
         self,
         intent: str,
@@ -1033,25 +1085,49 @@ class IntentParser:
         num_cols: List[str],
         cat_cols: List[str],
         q_lower: str,
-    ) -> Tuple[float, List[str]]:
-        score = 1.0
+    ) -> Tuple[float, List[str], Dict[str, float]]:
+        # Start at a lower baseline when no explicit aggregation keyword was found.
+        # This prevents fuzzy/fallback column matches from producing a falsely high score.
+        _EXPLICIT_AGG_KEYWORDS = [
+            "sum", "total", "average", "avg", "mean", "count", "minimum", "maximum",
+            "min", "max", "number of", "how many", "show", "list", "top", "bottom",
+            "highest", "lowest", "trend", "distribution", "compare",
+        ]
+        has_explicit_agg_signal = any(kw in q_lower for kw in _EXPLICIT_AGG_KEYWORDS)
+        score = 1.0 if (aggregation or has_explicit_agg_signal) else 0.70
         flags: List[str] = []
+
+        # Per-field confidence tracking
+        intent_conf = 1.0
+        metric_conf = 1.0
+        dim_conf = 1.0
+        filter_conf = 1.0
+
+        if not has_explicit_agg_signal and not aggregation:
+            flags.append("no explicit aggregation keyword detected — confidence capped at 0.70")
+            intent_conf -= 0.30
 
         # Validate metric exists in schema
         if metric and metric not in all_cols:
             score -= 0.20
+            metric_conf -= 0.40
             flags.append(f"metric '{metric}' not found in schema")
+        elif not metric and aggregation and aggregation != "COUNT":
+            metric_conf -= 0.20
+            flags.append("aggregation specified but no numeric metric resolved")
 
         # Validate dimensions exist
         for dim in dimensions:
             if dim not in all_cols:
                 score -= 0.10
+                dim_conf -= 0.25
                 flags.append(f"dimension '{dim}' not found in schema")
 
         # Explicit grouping intent but no dimensions resolved
         has_groupby = any(phrase in q_lower for phrase in _GROUPBY_PHRASES)
         if has_groupby and not dimensions:
             score -= 0.30
+            dim_conf -= 0.50
             flags.append("groupby keyword detected but no dimension resolved")
 
         # Aggregation without metric
@@ -1063,20 +1139,37 @@ class IntentParser:
         for f in filters:
             if f.column not in all_cols:
                 score -= 0.10
+                filter_conf -= 0.30
                 flags.append(f"filter column '{f.column}' not found in schema")
 
         # Intent-specific checks
         if intent == "aggregation" and not aggregation and not metric:
             score -= 0.15
+            intent_conf -= 0.20
             flags.append("aggregation intent but no agg function or metric resolved")
 
         if intent == "trend" and not any(
             any(k in c.lower() for k in ["date", "month", "year", "time"]) for c in all_cols
         ):
             score -= 0.20
+            intent_conf -= 0.30
             flags.append("trend intent but no date column found in schema")
 
-        return max(0.0, round(score, 3)), flags
+        # Penalise for out-of-scope conceptual signals (risks, advice, etc.)
+        _OOS_SIGNALS = ["risk", "risks", "advice", "suggest", "opinion", "challenge", "problem", "concern"]
+        if any(kw in q_lower for kw in _OOS_SIGNALS):
+            score -= 0.25
+            intent_conf -= 0.40
+            flags.append("out-of-scope conceptual keyword detected — confidence penalised")
+
+        per_field: Dict[str, float] = {
+            "intent":    max(0.0, round(intent_conf, 3)),
+            "metric":    max(0.0, round(metric_conf, 3)),
+            "dimension": max(0.0, round(dim_conf, 3)),
+            "filter":    max(0.0, round(filter_conf, 3)),
+        }
+
+        return max(0.0, round(score, 3)), flags, per_field
 
     # ------------------------------------------------------------------
     # 14. Chart Inference
