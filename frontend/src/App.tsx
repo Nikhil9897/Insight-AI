@@ -373,15 +373,29 @@ function WorkspaceInner() {
     'tell me', 'describe the', 'overview of',
     'affect', 'effect', 'impact', 'influence', 'relationship', 'correlation',
     'does ', 'do ', 'why ', 'how does', 'is there', 'can i', 'should i',
+    // Additional analytical / conceptual signals
+    'risk', 'factor', 'involving', 'concern', 'challenge', 'problem', 'issue',
+    'what about', 'analyze', 'analysis', 'insight', 'assess', 'evaluate',
+    'tell ', 'how can', 'potential', 'possible', 'likely', 'predict',
+    'forecast', 'pattern', 'trend', 'distribution', 'compare', 'contrast',
+    'advantage', 'disadvantage', 'strength', 'weakness', 'opportunity',
+    'threat', 'implication', 'conclusion', 'finding', 'observation',
+    'interesting', 'notable', 'significant', 'important', 'critical',
+    'key', 'main', 'major', 'primary', 'dominant', 'leading',
   ];
 
   const isConversational = (query: string): boolean => {
     const q = query.toLowerCase().trim();
-    // Exclude explicit SQL aggregation commands (e.g. "show top 5", "total sales by")
-    const isExplicitSql = (q.startsWith('show') || q.startsWith('select') || q.startsWith('get') || q.startsWith('list')) &&
-      (q.includes('by ') || q.includes('top ') || q.includes('group') || q.includes('sum') || q.includes('total'));
+    
+    // Explicit SQL aggregation commands stay on the SQL path (e.g. "show top 5 sales", "sum revenue by region")
+    const isExplicitSql = /^(show|select|get|list)\b/i.test(q) &&
+      /\b(by|top|group|sum|total|count|avg|average|min|max)\b/i.test(q);
     if (isExplicitSql) return false;
 
+    // Direct question mark signal
+    if (q.endsWith('?')) return true;
+
+    // Check keyword signals
     return CONV_SIGNALS.some((sig) => q.includes(sig));
   };
 
@@ -459,7 +473,41 @@ function WorkspaceInner() {
       }
 
       const result: QueryResult = responseData;
+
+      // Universal Fallback: If SQL execution returned 0 rows for any natural language query
+      // (ending in '?', 2+ words, or containing non-relational phrasing),
+      // re-route to AI Chat Engine so the user receives a helpful conversational answer.
+      const isCandidateForChatFallback =
+        queryText.trim().endsWith('?') ||
+        queryText.trim().split(/\s+/).length >= 2;
+
+      if ((!result.rows || result.rows.length === 0) && isCandidateForChatFallback) {
+        try {
+          const chatRes = await fetch('/api/analytics/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              userQuery: queryText,
+              datasetName: targetDataset.name,
+              datasetSummary: targetDataset.summary,
+              sampleRows: targetDataset.data.slice(0, 3),
+              sessionId: targetDataset.id,
+            }),
+          });
+          if (chatRes.ok) {
+            const chatData: ChatResult = await chatRes.json();
+            setActiveChatResult(chatData);
+            setActiveQueryResult(null);
+            setIsExecuting(false);
+            return;
+          }
+        } catch {
+          // ignore, fall through to showing the empty SQL result
+        }
+      }
+
       setActiveQueryResult(result);
+
 
       // Add to Query History Log
       const historyItem: QueryHistoryItem = {
